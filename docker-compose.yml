@@ -1,0 +1,34 @@
+# =============================================================================
+# Docker Compose for the SEB LTI Tool
+# =============================================================================
+# This runs the LTI tool and its MongoDB dependency.
+# Canvas runs separately (on your DigitalOcean droplet).
+#
+# Usage:
+#   cp .env.example .env    # Edit with your values
+#   docker compose up -d
+# =============================================================================
+
+services:
+  app:
+    build: .
+    ports:
+      - "${TOOL_PORT:-3001}:3001"
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/canvas-seb-lti
+    env_file:
+      - .env
+    depends_on:
+      - mongo
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
