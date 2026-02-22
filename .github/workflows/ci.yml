@@ -1,3 +1,4 @@
+# github actions that execute on every push
 name: CI
 
 on:

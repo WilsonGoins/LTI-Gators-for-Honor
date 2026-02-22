@@ -8,7 +8,7 @@ const config = {
     ltiKey: process.env.LTI_KEY || 'DEVELOPMENT_KEY_CHANGE_ME',
   },
 
-  // Canvas LTI Platform settings
+  // Canvas LTI Platform settings (local Canvas instance)
   platform: {
     url: process.env.LTI_PLATFORM_URL,
     clientId: process.env.LTI_CLIENT_ID,
@@ -17,12 +17,12 @@ const config = {
     keysetEndpoint: process.env.LTI_KEYSET_ENDPOINT,
   },
 
-  // MongoDB for ltijs
+  // MongoDB for ltijs (localhost when running tool via npm, mongo when in Docker)
   db: {
     uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/canvas-seb-lti',
   },
 
-  // Canvas REST API
+  // Canvas REST API (local Canvas instance)
   canvas: {
     apiUrl: process.env.CANVAS_API_URL,
     apiToken: process.env.CANVAS_API_TOKEN,

@@ -1,30 +1,14 @@
-// =============================================================================
-// Canvas SEB LTI Tool - Main Application
-// =============================================================================
-// This is the entry point for the LTI 1.3 tool. It uses ltijs to handle
-// the LTI protocol (OIDC login, launch, key management) and registers
-// our custom routes for SEB configuration and quiz management.
-// =============================================================================
+// Entry point for our LTI 1.3 tool using ltijs
 
-const path = require('path');
-const lti = require('ltijs').Provider;
-const config = require('./config');
+import { join } from 'path';
+import { Provider as lti } from 'ltijs';
+import { tool, db, platform as _platform } from './config';
 
-// ---------------------------------------------------------------------------
-// 1. Initialize ltijs
-// ---------------------------------------------------------------------------
-// ltijs handles all the LTI 1.3 plumbing for us:
-//   - OIDC login flow
-//   - ID token validation
-//   - Session management
-//   - JWK key generation and serving
-//   - Deep linking
-// ---------------------------------------------------------------------------
-
+// 1. Initialize ltijs with our tool config and db to handle login flow, token validation, sessions
 lti.setup(
-  config.tool.ltiKey,
+  tool.ltiKey,
   {
-    url: config.db.uri,
+    url: db.uri,    // TODO: confirm change in index.js
   },
   {
     // Application settings
@@ -32,21 +16,16 @@ lti.setup(
     loginUrl: '/lti/login',
     cookies: {
       secure: false,      // Set to true in production with HTTPS
-      sameSite: 'None',   // Required for LTI launches in iframes
+      sameSite: 'None',   
     },
-    devMode: true,         // Enables helpful debug logging - disable in production
-    dynRegRoute: '/register', // Dynamic registration endpoint (optional)
-    staticPath: path.join(__dirname, '..', 'public'),
+    devMode: true,      // TODO: possibly disable in production
+    dynRegRoute: '/register',
+    staticPath: join(__dirname, '..', 'public'),
   }
 );
 
-// ---------------------------------------------------------------------------
-// 2. Handle Successful LTI Launch
-// ---------------------------------------------------------------------------
-// This fires when Canvas successfully launches our tool.
-// The `token` contains all the LTI context: course ID, user info, roles, etc.
-// ---------------------------------------------------------------------------
 
+// successfull launch: (token has course id, user info, roles, and more)
 lti.onConnect(async (token, req, res) => {
   // Log launch info for debugging
   console.log('\n========== LTI LAUNCH ==========');
@@ -88,8 +67,7 @@ lti.onConnect(async (token, req, res) => {
     roles: roles,
   };
 
-  // For now, serve a simple confirmation page
-  // This will be replaced with the React frontend later
+  // For now, serve a simple confirmation page to be replaced by our next.js frontend later
   return res.send(`
     <html>
       <head>
@@ -175,30 +153,18 @@ lti.onConnect(async (token, req, res) => {
   `);
 });
 
-// ---------------------------------------------------------------------------
-// 3. Handle Deep Linking (optional, for future use)
-// ---------------------------------------------------------------------------
-// Deep linking lets Canvas ask our tool to return a resource link.
-// This is how the "Proctor with SEB" checkbox could work eventually.
-// ---------------------------------------------------------------------------
 
+// deep linking endpoint - Canvas will call this when instructor clicks "Proctor with SEB" checkbox in quiz settings
 lti.onDeepLinking(async (token, req, res) => {
   console.log('Deep Linking request received');
   // TODO: Implement deep linking for SEB resource selection
   return lti.redirect(res, '/', { newResource: true });
 });
 
-// ---------------------------------------------------------------------------
-// 4. Register Custom Routes
-// ---------------------------------------------------------------------------
-// We mount our own Express routes on top of ltijs for:
-//   - SEB configuration generation
-//   - Canvas API proxy calls
-//   - Health checks
-// ---------------------------------------------------------------------------
 
-const sebRoutes = require('./routes/seb');
-const ltiRoutes = require('./routes/lti');
+// custom routes are defined in src/routes/ and imported here to keep things organized
+import sebRoutes from './routes/seb';
+import ltiRoutes from './routes/lti';
 
 lti.app.use('/seb', sebRoutes);
 lti.app.use('/lti-info', ltiRoutes);
@@ -213,42 +179,39 @@ lti.app.get('/health', (req, res) => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// 5. Start the Server & Register Canvas as a Platform
-// ---------------------------------------------------------------------------
 
+// start server and register Canvas as an LTI platform if configured
 async function start() {
   // Deploy the ltijs server
-  await lti.deploy({ port: config.tool.port });
+  await lti.deploy({ port: tool.port });
 
-  // Register Canvas as an LTI platform
-  // This tells ltijs how to communicate with your Canvas instance
-  if (config.platform.url && config.platform.clientId) {
+  // Register Canvas as an LTI platform, so it can launch our tool
+  if (_platform.url && _platform.clientId) {
     const platform = await lti.registerPlatform({
-      url: config.platform.url,
+      url: _platform.url,
       name: 'Canvas LMS',
-      clientId: config.platform.clientId,
-      authenticationEndpoint: config.platform.authEndpoint,
-      accesstokenEndpoint: config.platform.tokenEndpoint,
+      clientId: _platform.clientId,
+      authenticationEndpoint: _platform.authEndpoint,
+      accesstokenEndpoint: _platform.tokenEndpoint,
       authConfig: {
         method: 'JWK_SET',
-        key: config.platform.keysetEndpoint,
+        key: _platform.keysetEndpoint,
       },
     });
 
     console.log('\n✅ Canvas platform registered');
-    console.log(`   Platform URL: ${config.platform.url}`);
-    console.log(`   Client ID: ${config.platform.clientId}`);
+    console.log(`   Platform URL: ${_platform.url}`);
+    console.log(`   Client ID: ${_platform.clientId}`);
   } else {
     console.log('\n⚠️  No Canvas platform configured yet.');
     console.log('   Set LTI_PLATFORM_URL and LTI_CLIENT_ID in .env');
     console.log('   The tool will start but LTI launches won\'t work.\n');
   }
 
-  console.log(`\n🚀 SEB Exam Creator LTI Tool running on port ${config.tool.port}`);
-  console.log(`   Tool URL: ${config.tool.url}`);
-  console.log(`   Health:   ${config.tool.url}/health`);
-  console.log(`   JWKS:     ${config.tool.url}/keys\n`);
+  console.log(`\n🚀 SEB Exam Creator LTI Tool running on port ${tool.port}`);
+  console.log(`   Tool URL: ${tool.url}`);
+  console.log(`   Health:   ${tool.url}/health`);
+  console.log(`   JWKS:     ${tool.url}/keys\n`);
 }
 
 start().catch((err) => {
