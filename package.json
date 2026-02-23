@@ -2,7 +2,6 @@
   "name": "canvas-seb-lti",
   "version": "0.1.0",
   "description": "LTI 1.3 tool for integrating Safe Exam Browser with Canvas LMS",
-  "type": "module",
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",

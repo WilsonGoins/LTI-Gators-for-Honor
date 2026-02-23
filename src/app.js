@@ -1,8 +1,8 @@
 // Entry point for our LTI 1.3 tool using ltijs
 
-import { join } from 'path';
-import { Provider as lti } from 'ltijs';
-import { tool, db, platform as _platform } from './config/index.js';
+const { join } = require('path');
+const lti = require('ltijs').Provider;
+const { tool, db, platform: _platform } = require('./config');
 
 // Initialize ltijs with our tool config and db to handle login flow, token validation, sessions
 lti.setup(
@@ -163,8 +163,8 @@ lti.onDeepLinking(async (token, req, res) => {
 
 
 // custom routes are defined in src/routes/ and imported here to keep things organized
-import sebRoutes from './routes/seb/index.js';
-import ltiRoutes from './routes/lti/index.js';
+const sebRoutes = require('./routes/seb');
+const ltiRoutes = require('./routes/lti');
 
 lti.app.use('/seb', sebRoutes);
 lti.app.use('/lti-info', ltiRoutes);
