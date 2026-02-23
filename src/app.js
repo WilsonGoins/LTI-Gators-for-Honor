@@ -118,7 +118,7 @@ app.post('/lti/login', (req, res) => {
 
     // Redirect to Canvas authorize endpoint
     const canvasUrl = platformConfig.canvasUrl || 'http://localhost:3000';
-    const authUrl = new URL(`${canvasUrl}/api/lti/authorize_redirect`);
+    const authUrl = new URL(`${canvasUrl}/api/lti/authorize`);
     authUrl.searchParams.append('scope', 'openid');
     authUrl.searchParams.append('response_type', 'id_token');
     authUrl.searchParams.append('response_mode', 'form_post');
@@ -129,6 +129,7 @@ app.post('/lti/login', (req, res) => {
     authUrl.searchParams.append('state', state);
     authUrl.searchParams.append('nonce', nonce);
     authUrl.searchParams.append('lti_message_hint', lti_message_hint || '');
+    authUrl.searchParams.append('lti_storage_target', '_parent');
 
     console.log('Redirecting to Canvas authorize:', authUrl.toString());
     res.redirect(authUrl.toString());
