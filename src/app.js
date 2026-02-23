@@ -94,8 +94,6 @@ lti.app.get('/health', (req, res) => {
 
 // start server and register Canvas as an LTI platform if configured
 async function start() {
-  lti.whitelist(lti.appRoute(), { route: new RegExp(/^\/lti\/login/), method: 'POST' });
-
   // Deploy the ltijs server
   await lti.deploy({ port: tool.port });
 
