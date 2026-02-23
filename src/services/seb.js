@@ -1,7 +1,7 @@
 // SEB configuration generation and validation logic
 
-import { createHash } from 'crypto';
-import { build } from 'plist';
+const { createHash } = require('crypto');
+const { build } = require('plist');
 
 // Security Presets which map to the setup wizard's dropdown
 
@@ -325,7 +325,7 @@ function hashPassword(password) {
 // Exports
 // ---------------------------------------------------------------------------
 
-export default {
+module.exports = {
   generateConfig,
   configToXML,
   generateSEBFile,
