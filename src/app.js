@@ -2,7 +2,7 @@
 
 import { join } from 'path';
 import { Provider as lti } from 'ltijs';
-import { tool, db, platform as _platform } from './config';
+import { tool, db, platform as _platform } from './config/index.js';
 
 // Initialize ltijs with our tool config and db to handle login flow, token validation, sessions
 lti.setup(
@@ -163,8 +163,8 @@ lti.onDeepLinking(async (token, req, res) => {
 
 
 // custom routes are defined in src/routes/ and imported here to keep things organized
-import sebRoutes from './routes/seb';
-import ltiRoutes from './routes/lti';
+import sebRoutes from './routes/seb/index.js';
+import ltiRoutes from './routes/lti/index.js';
 
 lti.app.use('/seb', sebRoutes);
 lti.app.use('/lti-info', ltiRoutes);
