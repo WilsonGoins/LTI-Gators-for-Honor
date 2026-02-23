@@ -3,7 +3,6 @@
 
 const express = require('express');
 const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
 const { importSPKI, exportJWK } = require('jose');
 const { tool, platform: platformConfig } = require('./config');
 
@@ -104,8 +103,8 @@ app.post('/lti/login', (req, res) => {
       return res.status(400).json({ error: 'Missing required LTI login parameters' });
     }
 
-    const nonce = uuidv4();
-    const state = uuidv4();
+    const nonce = crypto.randomUUID();
+    const state = crypto.randomUUID();
 
     // Store nonce for validation in the launch step
     nonceStore.set(state, {
