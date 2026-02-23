@@ -24,6 +24,12 @@ lti.setup(
   }
 );
 
+// print debugging
+lti.app.use((req, res, next) => {
+  console.log(`[REQ] ${req.method} ${req.url}`);
+  console.log(`[REQ] Query:`, req.query);
+  next();
+});
 
 // successfull launch: (token has course id, user info, roles, and more)
 lti.onConnect(async (token, req, res) => {
