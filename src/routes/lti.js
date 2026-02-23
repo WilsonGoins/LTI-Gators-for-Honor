@@ -7,7 +7,7 @@
 
 const express = require('express');
 const router = express.Router();
-const config = require('../config').default;
+const config = require('../config');
 
 // ---------------------------------------------------------------------------
 // GET /lti-info/setup

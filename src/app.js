@@ -27,32 +27,39 @@ lti.setup(
 
 // print debugging
 lti.app.use((req, res, next) => {
-  console.log(`[REQ] ${req.method} ${req.url}`);
-  console.log(`[REQ] Query:`, req.query);
+  console.log('[REQ]', req.method, req.url);
+  console.log('[REQ] Query:', req.query);
   next();
 });
 
 
-lti.onConnect(async (token, req, res) => {
-  // Log what we actually received
-  console.log('\n========== LTI LAUNCH ==========');
-  console.log('Token type:', typeof token);
-  console.log('Token:', JSON.stringify(token, null, 2));
-  console.log('res.locals.token:', JSON.stringify(res.locals?.token, null, 2));
-  console.log('res.locals.context:', JSON.stringify(res.locals?.context, null, 2));
+lti.onConnect(async (connection, req, res) => {
+  // Find the token wherever ltijs put it
+  const token = res.locals.token || res.locals.ltik || connection;
+  const context = res.locals.context;
+  
+  // Log everything we can find
+  const debugInfo = {
+    connectionType: typeof connection,
+    connection: connection,
+    localsKeys: Object.keys(res.locals || {}),
+    locals: res.locals,
+  };
+
+  console.log('\n========== LTI DEBUG ==========');
+  console.log(JSON.stringify(debugInfo, null, 2));
   console.log('================================\n');
 
-  // Just show success for now
   return res.send(`
     <html>
       <body style="font-family: sans-serif; padding: 40px;">
         <h1>✅ LTI Launch Successful!</h1>
-        <h3>Token Data:</h3>
-        <pre>${JSON.stringify(token, null, 2)}</pre>
-        <h3>res.locals.token:</h3>
-        <pre>${JSON.stringify(res.locals?.token, null, 2)}</pre>
-        <h3>res.locals.context:</h3>
-        <pre>${JSON.stringify(res.locals?.context, null, 2)}</pre>
+        <h3>Connection (1st arg):</h3>
+        <pre>${typeof connection}: ${JSON.stringify(connection, null, 2)}</pre>
+        <h3>res.locals keys:</h3>
+        <pre>${JSON.stringify(Object.keys(res.locals || {}))}</pre>
+        <h3>Full res.locals:</h3>
+        <pre>${JSON.stringify(res.locals, null, 2)}</pre>
       </body>
     </html>
   `);
@@ -94,7 +101,7 @@ async function start() {
 
   // Register Canvas as an LTI platform, so it can launch our tool
   if (_platform.url && _platform.clientId) {
-    const platform = await lti.registerPlatform({
+    await lti.registerPlatform({
       url: _platform.url,
       name: 'Canvas LMS',
       clientId: _platform.clientId,
