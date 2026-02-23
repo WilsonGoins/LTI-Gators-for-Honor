@@ -24,6 +24,7 @@ lti.setup(
   }
 );
 
+
 // print debugging
 lti.app.use((req, res, next) => {
   console.log(`[REQ] ${req.method} ${req.url}`);
@@ -31,129 +32,27 @@ lti.app.use((req, res, next) => {
   next();
 });
 
-// successfull launch: (token has course id, user info, roles, and more)
+
 lti.onConnect(async (token, req, res) => {
-  // Log launch info for debugging
+  // Log what we actually received
   console.log('\n========== LTI LAUNCH ==========');
-  console.log('User:', token.userInfo?.name || 'Unknown');
-  console.log('Email:', token.userInfo?.email || 'Unknown');
-  console.log('Roles:', token.platformContext?.roles || []);
-  console.log('Course ID:', token.platformContext?.context?.id || 'Unknown');
-  console.log('Course Title:', token.platformContext?.context?.title || 'Unknown');
+  console.log('Token type:', typeof token);
+  console.log('Token:', JSON.stringify(token, null, 2));
+  console.log('res.locals.token:', JSON.stringify(res.locals?.token, null, 2));
+  console.log('res.locals.context:', JSON.stringify(res.locals?.context, null, 2));
   console.log('================================\n');
 
-  // Check if user has instructor role
-  const roles = token.platformContext?.roles || [];
-  const isInstructor = roles.some(
-    (role) =>
-      role.includes('Instructor') ||
-      role.includes('Administrator') ||
-      role.includes('ContentDeveloper')
-  );
-
-  if (!isInstructor) {
-    return res.status(403).send(`
-      <html>
-        <body style="font-family: sans-serif; padding: 40px; text-align: center;">
-          <h1>Access Denied</h1>
-          <p>This tool is only available to instructors and administrators.</p>
-          <p>Your roles: ${roles.join(', ')}</p>
-        </body>
-      </html>
-    `);
-  }
-
-  // Extract context we'll need throughout the session
-  const context = {
-    courseId: token.platformContext?.context?.id,
-    courseTitle: token.platformContext?.context?.title,
-    userId: token.user,
-    userName: token.userInfo?.name,
-    userEmail: token.userInfo?.email,
-    roles: roles,
-  };
-
-  // For now, serve a simple confirmation page to be replaced by our next.js frontend later
+  // Just show success for now
   return res.send(`
     <html>
-      <head>
-        <title>SEB Exam Creator</title>
-        <style>
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 800px;
-            margin: 40px auto;
-            padding: 0 20px;
-            color: #333;
-          }
-          .success-banner {
-            background: #d4edda;
-            border: 1px solid #c3e6cb;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 24px;
-          }
-          .context-card {
-            background: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 24px;
-          }
-          .context-card h3 { margin-top: 0; }
-          .context-item { margin: 8px 0; }
-          .label { font-weight: 600; color: #555; }
-          .actions { margin-top: 24px; }
-          .btn {
-            display: inline-block;
-            padding: 12px 24px;
-            background: #0066cc;
-            color: white;
-            text-decoration: none;
-            border-radius: 6px;
-            margin-right: 12px;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-          }
-          .btn:hover { background: #0052a3; }
-          .btn-secondary { background: #6c757d; }
-        </style>
-      </head>
-      <body>
-        <div class="success-banner">
-          ✅ <strong>LTI Launch Successful!</strong> — Tool is connected to Canvas.
-        </div>
-        
-        <h1>🔒 SEB Exam Creator</h1>
-        
-        <div class="context-card">
-          <h3>Launch Context</h3>
-          <div class="context-item"><span class="label">Instructor:</span> ${context.userName || 'N/A'}</div>
-          <div class="context-item"><span class="label">Email:</span> ${context.userEmail || 'N/A'}</div>
-          <div class="context-item"><span class="label">Course:</span> ${context.courseTitle || 'N/A'}</div>
-          <div class="context-item"><span class="label">Course ID:</span> ${context.courseId || 'N/A'}</div>
-        </div>
-
-        <div class="context-card">
-          <h3>Available Actions</h3>
-          <p>These endpoints are live and ready for testing:</p>
-          <div class="actions">
-            <a class="btn" href="/seb/generate-test" target="_blank">Generate Test .seb File</a>
-            <a class="btn btn-secondary" href="/health" target="_blank">Health Check</a>
-          </div>
-        </div>
-
-        <div class="context-card">
-          <h3>Next Steps</h3>
-          <p>The LTI connection is working. The next development tasks are:</p>
-          <ol>
-            <li>Build the quiz creation wizard UI (React frontend)</li>
-            <li>Connect wizard to Canvas Quiz API for quiz creation</li>
-            <li>Generate .seb config files based on wizard selections</li>
-            <li>Add the "Proctor with SEB" checkbox flow</li>
-          </ol>
-        </div>
+      <body style="font-family: sans-serif; padding: 40px;">
+        <h1>✅ LTI Launch Successful!</h1>
+        <h3>Token Data:</h3>
+        <pre>${JSON.stringify(token, null, 2)}</pre>
+        <h3>res.locals.token:</h3>
+        <pre>${JSON.stringify(res.locals?.token, null, 2)}</pre>
+        <h3>res.locals.context:</h3>
+        <pre>${JSON.stringify(res.locals?.context, null, 2)}</pre>
       </body>
     </html>
   `);
