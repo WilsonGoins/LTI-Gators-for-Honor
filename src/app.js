@@ -145,6 +145,7 @@ app.post('/lti/login', (req, res) => {
 // ---------------------------------------------------------------------------
 app.post('/lti/launch', async (req, res) => {
   try {
+    console.log('Launch body:', JSON.stringify(req.body));        // todo: remove
     const { id_token, state } = req.body;
 
     console.log('\n========== LTI LAUNCH ==========');
