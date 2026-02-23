@@ -3,7 +3,6 @@
 
 const express = require('express');
 const crypto = require('crypto');
-const { importSPKI, exportJWK } = require('jose');
 const { tool, platform: platformConfig } = require('./config');
 
 const app = express();
@@ -42,8 +41,9 @@ async function initializeKeys() {
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
   });
 
-  const cryptoPubKey = await importSPKI(publicKey, 'RS256');
-  const jwk = await exportJWK(cryptoPubKey);
+  // Export public key as JWK using built-in crypto
+  const keyObject = crypto.createPublicKey(publicKey);
+  const jwk = keyObject.export({ format: 'jwk' });
   jwk.kid = 'seb-tool-key-1';
   jwk.alg = 'RS256';
   jwk.use = 'sig';
@@ -52,6 +52,7 @@ async function initializeKeys() {
   publicJwk = jwk;
   console.log('✅ RSA keys generated for JWKS');
 }
+
 
 // ---------------------------------------------------------------------------
 // JWKS endpoint — Canvas fetches our public key from here
