@@ -16,7 +16,7 @@ lti.setup(
     loginUrl: '/lti/login',
     cookies: {
       secure: false,      // Set to true in production with HTTPS
-      sameSite: 'None',   
+      sameSite: 'Lax',      // changed from "None" 
     },
     devMode: true,     
     dynRegRoute: '/register',
@@ -188,6 +188,8 @@ lti.app.get('/health', (req, res) => {
 
 // start server and register Canvas as an LTI platform if configured
 async function start() {
+  lti.whitelist(lti.appRoute(), { route: new RegExp(/^\/lti\/login/), method: 'POST' });
+
   // Deploy the ltijs server
   await lti.deploy({ port: tool.port });
 
