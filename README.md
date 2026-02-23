@@ -1,172 +1,93 @@
-# Canvas SEB Quiz Creator: LTI Tool
+# Canvas SEB Quiz Creator
 
-An LTI 1.3 tool that integrates Safe Exam Browser proctoring directly into Canvas LMS. Instructors can configure SEB-proctored exams without leaving Canvas or manually creating configuration files.
+**LTI 1.3 tool for integrating Safe Exam Browser with Canvas LMS**
 
-**Senior Design Project - University of Florida, Spring 2026**
-**Team:** Wilson Goins & Shane Downs
-**Advisor:** Dr. Jeremiah Blanchard
+> Senior Design Project — CIS4914, University of Florida
+> Team: Gators For Honor (Shane Downs & Wilson Goins)
+> Advisor: Dr. Jeremiah Blanchard
 
 ---
+
+## Project Summary
+
+Instructors at UF who want to use Safe Exam Browser (SEB) for proctored exams in Canvas currently face a fragmented, error-prone workflow: they must create quizzes in Canvas, separately configure SEB using its config tool, generate encrypted config files, and manually distribute them to students. This tool eliminates that complexity.
+
+The Canvas SEB Quiz Creator is an LTI 1.3 application that provides a unified wizard interface for creating Canvas quizzes pre-configured for SEB proctoring. It handles SEB configuration file generation, Config Key computation, and quiz creation through the Canvas API, all from within Canvas itself.
 
 ## Architecture
 
 ```
-  Your local machine
-  ═══════════════════════════════════════════════════════════
-
-  ┌─────────────────────┐       LTI 1.3        ┌──────────────────────┐
-  │  Canvas LMS         │ ────────────────────► │  SEB LTI Tool        │
-  │  (Docker, port 3000)│                       │  (npm, port 3001)    │
-  │  canvas-lms repo    │ ◄── REST API ──────── │  this repo           │
-  └─────────────────────┘                       └──────────┬───────────┘
-                                                           │
-                                                  Generates .seb files
-                                                  Computes Config Keys
-
-  ┌──────────────────────┐
-  │  MongoDB              │
-  │  (Docker, port 27017) │  ◄── ltijs session/key storage
-  └──────────────────────┘
+┌─────────────────┐     LTI 1.3 Launch      ┌──────────────────────┐
+│   Canvas LMS    │ ──────────────────────►  │  SEB Exam Creator    │
+│  (Docker local) │ ◄──────────────────────  │  (Node.js + ltijs)   │
+│  localhost:3000  │     Quiz API calls       │  localhost:3001       │
+└─────────────────┘                          └──────────┬───────────┘
+                                                        │
+                                              ┌─────────▼─────────┐
+                                              │     MongoDB       │
+                                              │  (Docker container)│
+                                              │  localhost:27017   │
+                                              └───────────────────┘
 ```
 
-- **Canvas** runs locally in Docker from the [canvas-lms](https://github.com/instructure/canvas-lms) repo
-- **This LTI tool** runs locally via `npm run dev`
-- **MongoDB** runs locally in Docker (started from this repo's docker-compose)
+**Tech stack:** Node.js, Express (via ltijs), MongoDB, plist (XML generation), crypto (SHA-256 hashing)
 
-## Prerequisites
+## Daily Development Workflow
 
-- **Docker Desktop** with at least **8GB RAM** and allocated (Settings → Resources → Memory)
-- **Git**
-- **Node.js 18+** ([download](https://nodejs.org/))
+### Starting your dev environment
 
-## Setup — Step 1: Get Canvas Running Locally
-
+**Terminal 1 — Canvas (in your canvas-lms directory):**
 ```bash
-git clone https://github.com/instructure/canvas-lms.git canvas
-cd canvas
-git checkout prod
-
-# Automated Docker setup (30-60 min first time)
-./script/docker_dev_setup.sh
-
-# If it fails with permission errors:
-export DOCKER_BUILDKIT=0
-export COMPOSE_DOCKER_CLI_BUILD=0
-./script/docker_dev_setup.sh
+cd C:\tmp\canvas     
+docker compose up -d      # then you can open up http://localhost:3000 after it is up
 ```
 
-When prompted, create an admin account (email + password). **Write these down.**
-
-Start Canvas:
+**Terminal 2 — MongoDB (in the LTI tool directory):**
 ```bash
-docker compose up -d
-```
-
-Verify: open `http://localhost:3000`, you should see the Canvas login page.
-
-## Setup — Step 2: Get the LTI Tool Running
-
-```bash
-# In a separate directory from canvas
-git clone https://github.com/WilsonGoins/LTI-Gators-for-Honor.git
-cd LTI-Gators-for-Honor
-
-# Install Node dependencies
-npm install
-
-# Start MongoDB (runs in Docker in the background)
+cd C:\tmp\LTI-Gators-for-Honor    
 docker compose up -d mongo
-
-# Configure environment variables in .env and src/config/index.js
-Populate `LTI_KEY` with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
-Fill in `LTI_CLIENT_ID` blank with value from Canvas Developer Key
-
-Start the LTI tool:
-```bash
-npm run dev
 ```
 
-Verify: open `http://localhost:3001/health` — you should see `{"status":"ok",...}`.
-
-## Setup — Step 3: Register the Tool in Canvas
-
-Visit `http://localhost:3001/lti-info/setup` for a visual guide, or follow these steps:
-
-1. Log in to Canvas at `http://localhost:3000` with your admin account
-2. Go to **Admin → Site Admin → Developer Keys**
-3. Click **+ Developer Key → LTI Key**
-4. Fill in:
-   - **Key Name:** `SEB Exam Creator`
-   - **Target Link URI:** `http://localhost:3001/`
-   - **OpenID Connect Initiation URL:** `http://localhost:3001/lti/login`
-   - **JWK Method:** Public JWK URL
-   - **Public JWK URL:** `http://localhost:3001/keys`
-   - **Redirect URIs:** `http://localhost:3001/`
-5. Save. Toggle the key to **ON**.
-6. Copy the **Client ID** (long number in the key list).
-7. Paste it into your `.env` as `LTI_CLIENT_ID`.
-8. Restart the tool (Ctrl+C then `npm run dev` again).
-
-### Install in a Course
-
-1. In Canvas, create a test course (or use the default one)
-2. Go to **Course → Settings → Apps → + App**
-3. Configuration Type: **By Client ID**
-4. Paste the Client ID → Submit
-5. Click the tool in the course navigation
-
-You should see the "LTI Launch Successful" page.
-
-## Development Workflow
-
+**Terminal 3 — LTI Tool:**
 ```bash
-# Terminal 1: Start Canvas (if not already running)
-cd canvas
-docker compose up -d
-
-# Terminal 2: Start MongoDB + LTI tool
-cd gators-for-honor-senior-project-2026
-docker compose up -d mongo
-npm run dev
+cd C:\tmp\LTI-Gators-for-Honor
+npm run dev       # this runs on http://localhost:3001, but there is nothing to see at that endpoint
 ```
 
-## Common Commands
+### Testing the LTI launch
+
+1. Go to `http://localhost:3000` and log into Canvas
+2. Navigate to your test course
+3. Click "SEB Exam Creator" in the left sidebar
+4. You should see the LTI Launch Successful page
+
+### Shutting down
 
 ```bash
-# run the app and show any warnings/errors
-npm run dev
+# Stop the LTI tool in Terminal 3:
+ Ctrl+C
 
-# Stop MongoDB
+# Stop MongoDB in Terminal 2:
+cd C:\tmp\LTI-Gators-for-Honor
 docker compose down
 
-# Run tests
-npm test
-
-# Check what Docker containers are running
-docker ps
+# Stop Canvas in terminal 1:
+cd C:\tmp\canvas
+docker compose down
 ```
 
-## API Endpoints
+Canvas and MongoDB data persist across restarts (stored in Docker volumes). You don't need to re-run database setup or asset compilation again.
 
-| Endpoint | Method | Auth | Description |
-|----------|--------|------|-------------|
-| `/` | GET | LTI | Main tool launch (via Canvas) |
-| `/health` | GET | None | Health check |
-| `/keys` | GET | None | JWK public keys (for Canvas verification) |
-| `/lti/login` | GET | OIDC | LTI OIDC initiation |
-| `/lti-info/setup` | GET | None | Setup guide with Canvas registration values |
-| `/seb/presets` | GET | None | List security presets |
-| `/seb/generate` | POST | None | Generate .seb file download |
-| `/seb/config-key` | POST | None | Compute Config Key |
-| `/seb/generate-test` | GET | None | Test page with sample output |
+## Environment Variables
 
-## Documentation
+See `.env.example` for the full template. Key variables:
 
-- [UF Migration Guide](docs/UF_MIGRATION_GUIDE.md) — How to deploy this tool to UF's Canvas
-- [Canvas API Reference](https://canvas.instructure.com/doc/api/)
-- [SEB Integration Guide](https://safeexambrowser.org/developer/seb-integration.html)
+## References
+
+- [Canvas REST API](https://canvas.instructure.com/doc/api/)
+- [Canvas New Quizzes API](https://canvas.instructure.com/doc/api/new_quizzes.html)
+- [SEB Developer Docs](https://safeexambrowser.org/developer/overview.html)
+- [SEB Config Key Spec](https://safeexambrowser.org/developer/seb-config-key.html)
+- [SEB File Format Spec](https://safeexambrowser.org/developer/seb-file-format.html)
+- [ltijs Documentation](https://cvmcosta.me/ltijs/)
 - [LTI 1.3 Specification](https://www.imsglobal.org/spec/lti/v1p3/)
-
-## License
-
-MIT

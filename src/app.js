@@ -18,7 +18,7 @@ lti.setup(
       secure: false,      // Set to true in production with HTTPS
       sameSite: 'None',   
     },
-    devMode: false,     
+    devMode: true,     
     dynRegRoute: '/register',
     staticPath: join(__dirname, '..', 'public'),
   }
