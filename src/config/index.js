@@ -5,7 +5,7 @@ const config = {
   tool: {
     url: process.env.TOOL_URL || 'http://localhost:3001',
     port: parseInt(process.env.TOOL_PORT, 10) || 3001,
-    ltiKey: process.env.LTI_KEY || 'DEVELOPMENT_KEY_CHANGE_ME',
+    ltiKey: process.env.LTI_KEY || 'DEVELOPMENT_KEY_CHANGE_ME',   // TODO
   },
 
   // Canvas LTI Platform settings (local Canvas instance)
@@ -35,4 +35,4 @@ const config = {
   },
 };
 
-module.exports = config;
+export default config;

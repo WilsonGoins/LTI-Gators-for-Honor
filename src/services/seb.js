@@ -1,24 +1,9 @@
-// =============================================================================
-// SEB Configuration Generator
-// =============================================================================
-// Generates Safe Exam Browser .seb configuration files.
-// The .seb format is an XML plist that gets optionally compressed/encrypted.
-//
-// For MVP, we generate uncompressed XML plist files (prefix: plnd).
-// Encryption support can be added later.
-//
-// Reference: https://safeexambrowser.org/developer/seb-file-format.html
-// =============================================================================
+// SEB configuration generation and validation logic
 
-const crypto = require('crypto');
-const plist = require('plist');
+import { createHash } from 'crypto';
+import { build } from 'plist';
 
-// ---------------------------------------------------------------------------
-// Security Presets
-// ---------------------------------------------------------------------------
-// These map to the wizard's preset dropdown. Each preset is a bundle of
-// SEB settings appropriate for a specific exam scenario.
-// ---------------------------------------------------------------------------
+// Security Presets which map to the setup wizard's dropdown
 
 const SECURITY_PRESETS = {
   standard: {
@@ -220,7 +205,7 @@ function buildURLFilterRules(allowedDomains) {
  * @returns {string} XML plist string
  */
 function configToXML(config) {
-  return plist.build(config);
+  return build(config);
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +261,7 @@ function computeConfigKey(config) {
   const json = JSON.stringify(sorted);
 
   // Step 5: SHA-256 hash
-  const hash = crypto.createHash('sha256').update(json, 'utf8').digest('hex');
+  const hash = createHash('sha256').update(json, 'utf8').digest('hex');
 
   return hash;
 }
@@ -322,8 +307,7 @@ function sortAndClean(obj) {
  * @returns {boolean} Whether the hash is valid
  */
 function verifyConfigKeyHash(requestURL, configKey, receivedHash) {
-  const expected = crypto
-    .createHash('sha256')
+  const expected = createHash('sha256')
     .update(requestURL + configKey, 'utf8')
     .digest('hex');
   return expected === receivedHash;
@@ -334,14 +318,14 @@ function verifyConfigKeyHash(requestURL, configKey, receivedHash) {
 // ---------------------------------------------------------------------------
 
 function hashPassword(password) {
-  return crypto.createHash('sha256').update(password, 'utf8').digest('hex');
+  return createHash('sha256').update(password, 'utf8').digest('hex');
 }
 
 // ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
-module.exports = {
+export default {
   generateConfig,
   configToXML,
   generateSEBFile,

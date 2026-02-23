@@ -4,11 +4,11 @@ import { join } from 'path';
 import { Provider as lti } from 'ltijs';
 import { tool, db, platform as _platform } from './config';
 
-// 1. Initialize ltijs with our tool config and db to handle login flow, token validation, sessions
+// Initialize ltijs with our tool config and db to handle login flow, token validation, sessions
 lti.setup(
   tool.ltiKey,
   {
-    url: db.uri,    // TODO: confirm change in index.js
+    url: db.uri,    
   },
   {
     // Application settings
@@ -18,7 +18,7 @@ lti.setup(
       secure: false,      // Set to true in production with HTTPS
       sameSite: 'None',   
     },
-    devMode: true,      // TODO: possibly disable in production
+    devMode: false,     
     dynRegRoute: '/register',
     staticPath: join(__dirname, '..', 'public'),
   }

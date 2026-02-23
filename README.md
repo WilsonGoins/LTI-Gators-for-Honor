@@ -32,12 +32,10 @@ An LTI 1.3 tool that integrates Safe Exam Browser proctoring directly into Canva
 - **Canvas** runs locally in Docker from the [canvas-lms](https://github.com/instructure/canvas-lms) repo
 - **This LTI tool** runs locally via `npm run dev`
 - **MongoDB** runs locally in Docker (started from this repo's docker-compose)
-- Each developer runs everything on their own machine
-- Code collaboration happens through GitHub (branches → PRs → merge → pull)
 
 ## Prerequisites
 
-- **Docker Desktop** with at least **8GB RAM** allocated (Settings → Resources → Memory)
+- **Docker Desktop** with at least **8GB RAM** and allocated (Settings → Resources → Memory)
 - **Git**
 - **Node.js 18+** ([download](https://nodejs.org/))
 
@@ -64,14 +62,14 @@ Start Canvas:
 docker compose up -d
 ```
 
-Verify: open `http://localhost:3000` — you should see the Canvas login page.
+Verify: open `http://localhost:3000`, you should see the Canvas login page.
 
 ## Setup — Step 2: Get the LTI Tool Running
 
 ```bash
 # In a separate directory from canvas
-git clone https://github.com/shane-downs/gators-for-honor-senior-project-2026.git
-cd gators-for-honor-senior-project-2026
+git clone https://github.com/WilsonGoins/LTI-Gators-for-Honor.git
+cd LTI-Gators-for-Honor
 
 # Install Node dependencies
 npm install
@@ -79,17 +77,11 @@ npm install
 # Start MongoDB (runs in Docker in the background)
 docker compose up -d mongo
 
-# Configure environment
-cp .env.example .env
-```
+# Configure environment variables in .env and src/config/index.js
+Populate `LTI_KEY` with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+Fill in `LTI_CLIENT_ID` blank with value from Canvas Developer Key
 
-Edit `.env` — generate and fill in the `LTI_KEY`:
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-Paste the output as the `LTI_KEY` value. Leave `LTI_CLIENT_ID` blank for now.
-
-Start the tool:
+Start the LTI tool:
 ```bash
 npm run dev
 ```
@@ -125,9 +117,7 @@ Visit `http://localhost:3001/lti-info/setup` for a visual guide, or follow these
 
 You should see the "LTI Launch Successful" page.
 
-## Daily Development Workflow
-
-Each time you sit down to work:
+## Development Workflow
 
 ```bash
 # Terminal 1: Start Canvas (if not already running)
@@ -140,35 +130,10 @@ docker compose up -d mongo
 npm run dev
 ```
 
-When working on code:
-
-```bash
-# Pull latest changes from GitHub
-git pull
-
-# Create a branch for your work
-git checkout -b feature/my-feature
-
-# Make changes — nodemon auto-restarts on save
-
-# Run tests
-npm test
-
-# Commit and push
-git add -A
-git commit -m "feat: description of change"
-git push origin feature/my-feature
-
-# Open a PR on GitHub for your partner to review
-```
-
 ## Common Commands
 
 ```bash
-# View tool logs — npm run dev shows them in the terminal automatically
-
-# Restart after changing .env
-# Ctrl+C to stop, then:
+# run the app and show any warnings/errors
 npm run dev
 
 # Stop MongoDB
@@ -179,32 +144,6 @@ npm test
 
 # Check what Docker containers are running
 docker ps
-```
-
-## Project Structure
-
-```
-├── src/
-│   ├── app.js              # Entry point — ltijs setup, LTI launch handler
-│   ├── config/
-│   │   └── index.js        # Loads environment variables from .env
-│   ├── routes/
-│   │   ├── lti.js          # Setup guide / debug page
-│   │   └── seb.js          # SEB file generation + Config Key endpoints
-│   └── services/
-│       ├── canvas.js       # Canvas REST API client (courses, quizzes)
-│       └── seb.js          # Core SEB logic: presets, XML generation, Config Key
-├── tests/
-│   └── seb.test.js         # Unit tests for SEB module
-├── docs/
-│   └── UF_MIGRATION_GUIDE.md  # Guide for future deployment to UF Canvas
-├── .github/
-│   └── workflows/
-│       └── ci.yml          # GitHub Actions CI (runs tests on push/PR)
-├── docker-compose.yml      # Runs MongoDB (and optionally the tool)
-├── Dockerfile              # Container build for the tool (for deployment)
-├── .env.example            # Environment variable template
-└── .gitignore
 ```
 
 ## API Endpoints
