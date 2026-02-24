@@ -171,11 +171,12 @@ app.post('/lti/login', (req, res) => {
       lti_deployment_id,
     } = req.body;
 
-    console.log('\n========== LTI LOGIN ==========');
-    console.log('iss:', iss);
-    console.log('client_id:', client_id);
-    console.log('login_hint:', login_hint);
-    console.log('================================\n');
+    // print debugging
+    // console.log('\n========== LTI LOGIN ==========');
+    // console.log('iss:', iss);
+    // console.log('client_id:', client_id);
+    // console.log('login_hint:', login_hint);
+    // console.log('================================\n');
 
     if (!iss || !login_hint || !client_id) {
       return res.status(400).json({ error: 'Missing required LTI login parameters' });
@@ -207,7 +208,8 @@ app.post('/lti/login', (req, res) => {
       authUrl.searchParams.append('lti_message_hint', lti_message_hint);
     }
 
-    console.log('Redirecting to Canvas authorize:', authUrl.toString());
+    // console.log('Redirecting to Canvas authorize:', authUrl.toString());
+    console.log('Redirecting to Canvas auth...');
     res.redirect(authUrl.toString());
   } catch (error) {
     console.error('Login error:', error);
@@ -229,9 +231,10 @@ app.post('/lti/launch', async (req, res) => {
     }
     const { id_token, state } = req.body;
 
-    console.log('\n========== LTI LAUNCH ==========');
-    console.log('state:', state);
-    console.log('id_token present:', !!id_token);
+    console.log('LTI Launching...');
+    // console.log('\n========== LTI LAUNCH ==========');
+    // console.log('state:', state);
+    // console.log('id_token present:', !!id_token);
 
     if (!id_token || !state) {
       throw new Error('Missing id_token or state');
@@ -240,7 +243,7 @@ app.post('/lti/launch', async (req, res) => {
     // Validate state + nonce
     const nonceData = nonceStore.get(state);
     if (!nonceData) {
-      throw new Error('Invalid state — not found in nonce store');
+      throw new Error('Invalid state, not found in nonce store');
     }
     if (nonceData.expiresAt < Date.now()) {
       nonceStore.delete(state);
@@ -257,8 +260,8 @@ app.post('/lti/launch', async (req, res) => {
     const header = JSON.parse(Buffer.from(headerEncoded, 'base64url').toString());
     const payload = JSON.parse(Buffer.from(payloadEncoded, 'base64url').toString());
 
-    console.log('JWT kid:', header.kid);
-    console.log('JWT iss:', payload.iss);
+    // console.log('JWT kid:', header.kid);
+    // console.log('JWT iss:', payload.iss);
 
     // Verify nonce
     if (payload.nonce !== nonceData.nonce) {
@@ -295,7 +298,7 @@ app.post('/lti/launch', async (req, res) => {
       throw new Error('Invalid JWT signature');
     }
 
-    console.log('✅ JWT signature verified');
+    // console.log('✅ JWT signature verified');
 
     // Extract LTI claims
     const ltiContext =
@@ -306,9 +309,9 @@ app.post('/lti/launch', async (req, res) => {
       payload['https://purl.imsglobal.org/spec/lti/claim/custom'] || {};
 
     // Debug: log the full payload so you can see exactly what Canvas sends
-    console.log('Full JWT payload keys:', Object.keys(payload));
-    console.log('given_name:', payload.given_name, '| family_name:', payload.family_name);
-    console.log('name:', payload.name, '| picture:', payload.picture);
+    // console.log('Full JWT payload keys:', Object.keys(payload));
+    // console.log('given_name:', payload.given_name, '| family_name:', payload.family_name);
+    // console.log('name:', payload.name, '| picture:', payload.picture);
 
     // Canvas LTI 1.3 uses OIDC standard claims: given_name + family_name
     const userName =
@@ -327,10 +330,10 @@ app.post('/lti/launch', async (req, res) => {
       canvasUrl,
     };
 
-    console.log('User:', context.userName);
-    console.log('Course:', context.courseTitle);
-    console.log('Roles:', context.roles.join(', '));
-    console.log('================================\n');
+    // console.log('User:', context.userName);
+    // console.log('Course:', context.courseTitle);
+    // console.log('Roles:', context.roles.join(', '));
+    // console.log('================================\n');
 
     // Check instructor role
     const isInstructor = roles.some(
@@ -361,7 +364,8 @@ app.post('/lti/launch', async (req, res) => {
     const redirectUrl = new URL(FRONTEND_URL);
     redirectUrl.searchParams.set('token', sessionToken);
 
-    console.log(`✅ Redirecting to frontend: ${redirectUrl.toString()}`);
+    // console.log(`✅ Redirecting to frontend: ${redirectUrl.toString()}`);
+    console.log(`✅ Redirecting to frontend...`);
     return res.redirect(redirectUrl.toString());
   } catch (error) {
     console.error('Launch error:', error);
