@@ -5,6 +5,7 @@ export interface LTIContext {
   userName: string;
   userEmail: string;
   roles: string[];
+  avatarUrl: string | null;
   canvasUrl: string;
 }
 

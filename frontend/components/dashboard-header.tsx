@@ -1,6 +1,6 @@
 "use client";
 
-import { Shield, User, LogOut } from "lucide-react";
+import { Shield, User } from "lucide-react";
 import { LTIContext } from "@/lib/types";
 
 interface DashboardHeaderProps {
@@ -12,7 +12,6 @@ export function DashboardHeader({ context }: DashboardHeaderProps) {
 
   return (
     <header className="border-b bg-card">
-      {/* Top bar */}
       <div className="mx-auto max-w-7xl px-6 py-4 flex items-center justify-between">
         {/* Left — branding + course */}
         <div className="flex items-center gap-3">
@@ -29,20 +28,24 @@ export function DashboardHeader({ context }: DashboardHeaderProps) {
           </div>
         </div>
 
-        {/* Right — user info */}
+        {/* Right — user name + avatar */}
         {context && (
           <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium text-foreground">
-                {context.userName}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {context.roles.join(", ")}
-              </p>
-            </div>
-            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-secondary text-secondary-foreground">
-              <User className="w-4 h-4" />
-            </div>
+            <p className="text-sm font-medium text-foreground hidden sm:block">
+              {context.userName}
+            </p>
+            {context.avatarUrl ? (
+              <img
+                src={context.avatarUrl}
+                alt={context.userName}
+                className="w-8 h-8 rounded-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-secondary text-secondary-foreground">
+                <User className="w-4 h-4" />
+              </div>
+            )}
           </div>
         )}
       </div>

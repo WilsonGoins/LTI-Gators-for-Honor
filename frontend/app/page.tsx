@@ -52,6 +52,7 @@ export default function DashboardPage() {
           userName: "Dr. Jane Smith",
           userEmail: "jsmith@ufl.edu",
           roles: ["Instructor"],
+          avatarUrl: null,
           canvasUrl: "https://canvas.ufl.edu",
         });
         setLoading(false);
