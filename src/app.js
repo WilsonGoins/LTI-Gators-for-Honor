@@ -4,6 +4,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const { tool, platform: platformConfig } = require('./config');
+const path = require('path');
 
 const app = express();
 
@@ -24,10 +25,13 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(express.static(path.join(__dirname, '..', 'public')));
+
 // ---------------------------------------------------------------------------
 // In-memory stores (use Redis/DB in production)
 // ---------------------------------------------------------------------------
 const nonceStore = new Map();
+const sessionStore = new Map();
 let privateKey;
 let publicJwk;
 
@@ -228,7 +232,7 @@ app.post('/lti/launch', async (req, res) => {
     const custom = payload['https://purl.imsglobal.org/spec/lti/claim/custom'] || {};
 
     const context = {
-      courseId: ltiContext.id,
+      courseId: custom.canvas_course_id || ltiContext.id,
       courseTitle: ltiContext.title,
       userName: payload.name || custom.user_name_full || 'Unknown',
       userEmail: payload.email || custom.user_email || 'N/A',
@@ -260,86 +264,43 @@ app.post('/lti/launch', async (req, res) => {
       `);
     }
 
-    // Render the tool
-    return res.send(`
-      <html>
-        <head>
-          <title>SEB Exam Creator</title>
-          <style>
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              max-width: 800px;
-              margin: 40px auto;
-              padding: 0 20px;
-              color: #333;
-            }
-            .success-banner {
-              background: #d4edda;
-              border: 1px solid #c3e6cb;
-              border-radius: 8px;
-              padding: 20px;
-              margin-bottom: 24px;
-            }
-            .context-card {
-              background: #f8f9fa;
-              border: 1px solid #dee2e6;
-              border-radius: 8px;
-              padding: 20px;
-              margin-bottom: 24px;
-            }
-            .context-card h3 { margin-top: 0; }
-            .context-item { margin: 8px 0; }
-            .label { font-weight: 600; color: #555; }
-            .actions { margin-top: 24px; }
-            .btn {
-              display: inline-block;
-              padding: 12px 24px;
-              background: #0066cc;
-              color: white;
-              text-decoration: none;
-              border-radius: 6px;
-              margin-right: 12px;
-            }
-            .btn:hover { background: #0052a3; }
-            .btn-secondary { background: #6c757d; }
-          </style>
-        </head>
-        <body>
-          <div class="success-banner">
-            ✅ <strong>LTI Launch Successful!</strong> — Tool is connected to Canvas.
-          </div>
+    // Store launch context in a simple session
+    const sessionId = crypto.randomUUID();
+    sessionStore.set(sessionId, {
+      courseId: custom.canvas_course_id || ltiContext.id,
+      courseTitle: ltiContext.title,
+      userName: payload.name || custom.user_name_full || 'Unknown',
+      userEmail: payload.email || custom.user_email || 'N/A',
+      roles: context.roles,
+      canvasDomain: platformConfig.canvasUrl || 'canvas.docker',
+      createdAt: Date.now(),
+    });
 
-          <h1>🔒 SEB Exam Creator</h1>
+    // Clean up old sessions (older than 4 hours)
+    for (const [key, val] of sessionStore) {
+      if (Date.now() - val.createdAt > 4 * 60 * 60 * 1000) sessionStore.delete(key);
+    }
 
-          <div class="context-card">
-            <h3>Launch Context</h3>
-            <div class="context-item"><span class="label">Instructor:</span> ${context.userName}</div>
-            <div class="context-item"><span class="label">Email:</span> ${context.userEmail}</div>
-            <div class="context-item"><span class="label">Course:</span> ${context.courseTitle || 'N/A'}</div>
-            <div class="context-item"><span class="label">Course ID:</span> ${context.courseId || 'N/A'}</div>
-            <div class="context-item"><span class="label">Roles:</span> ${context.roles.join(', ')}</div>
-          </div>
+    // Serve wizard.html with context injected via script tag
+    const fs = require('fs');
+    const wizardPath = path.join(__dirname, '..', 'public', 'wizard.html');
+    let html = fs.readFileSync(wizardPath, 'utf-8');
 
-          <div class="context-card">
-            <h3>Available Actions</h3>
-            <div class="actions">
-              <a class="btn" href="/seb/generate-test" target="_blank">Generate Test .seb File</a>
-              <a class="btn btn-secondary" href="/health" target="_blank">Health Check</a>
-            </div>
-          </div>
+    const contextScript = `<script>
+      window.__LTI_CONTEXT__ = ${JSON.stringify({
+        courseId: custom.canvas_course_id || ltiContext.id,
+        courseTitle: ltiContext.title,
+        userName: payload.name || custom.user_name_full || 'Unknown',
+        userEmail: payload.email || custom.user_email || 'N/A',
+        roles: context.roles,
+        sessionId: sessionId,
+        canvasDomain: new URL(platformConfig.canvasUrl || 'http://canvas.docker').host,
+      })};
+    </script>`;
 
-          <div class="context-card">
-            <h3>Next Steps</h3>
-            <p>The LTI connection is working. Next tasks:</p>
-            <ol>
-              <li>Build the quiz creation wizard UI</li>
-              <li>Connect wizard to Canvas Quiz API</li>
-              <li>Generate .seb config files based on wizard selections</li>
-            </ol>
-          </div>
-        </body>
-      </html>
-    `);
+    // Inject context before closing </head>
+    html = html.replace('</head>', contextScript + '</head>');
+    return res.send(html);
   } catch (error) {
     console.error('Launch error:', error);
     res.status(500).send(`
@@ -351,6 +312,115 @@ app.post('/lti/launch', async (req, res) => {
         </body>
       </html>
     `);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// API endpoints for the wizard frontend
+// ---------------------------------------------------------------------------
+
+// Middleware to validate session (simple version)
+function requireSession(req, res, next) {
+  // For now, just check that we have a valid Canvas API token configured
+  if (!require('./config').canvas.apiToken) {
+    return res.status(401).json({ error: 'Canvas API token not configured' });
+  }
+  next();
+}
+
+// GET /api/courses/:courseId/quizzes — fetch quizzes from Canvas
+app.get('/api/courses/:courseId/quizzes', requireSession, async (req, res) => {
+  try {
+    const { apiUrl, apiToken } = require('./config').canvas;
+    const courseId = req.params.courseId;
+
+    const response = await fetch(`${apiUrl}/courses/${courseId}/quizzes?per_page=50`, {
+      headers: { 'Authorization': `Bearer ${apiToken}` }
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`Canvas API error ${response.status}: ${err}`);
+    }
+
+    const quizzes = await response.json();
+    res.json(quizzes);
+  } catch (err) {
+    console.error('Error fetching quizzes:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/seb/apply — generate .seb config and patch Canvas quiz
+app.post('/api/seb/apply', requireSession, async (req, res) => {
+  try {
+    const { quizId, courseId, preset, settings } = req.body;
+    const { apiUrl, apiToken } = require('./config').canvas;
+    const canvasUrl = platformConfig.canvasUrl || 'http://canvas.docker';
+
+    if (!quizId || !courseId) {
+      return res.status(400).json({ error: 'Missing quizId or courseId' });
+    }
+
+    // Generate an access code if not provided
+    const accessCode = settings.accessCode || 'SEB-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+
+    // Build the SEB config object (used by the /seb routes to generate .seb XML)
+    const sebConfig = {
+      startURL: `${canvasUrl}/courses/${courseId}/quizzes/${quizId}`,
+      browserViewMode: settings.kioskMode ? 1 : 0,
+      enableClipboard: !settings.blockClipboard,
+      enablePrintScreen: !settings.blockScreenshots,
+      blockScreenShotsLegacy: settings.blockScreenshots,
+      allowBrowsingBackForward: settings.allowNavigation,
+      showReloadButton: settings.showReloadButton,
+      showTime: settings.showTime,
+      allowSpellCheck: settings.allowSpellCheck,
+      allowDictionaryLookup: settings.allowDictionary,
+      allowSiri: settings.allowSiri,
+      allowVirtualMachine: !settings.blockVM,
+      allowScreenSharing: !settings.blockScreenSharing,
+      monitorProcesses: settings.monitorProcesses,
+      URLFilterEnable: settings.urlFilterEnabled,
+      allowedURLs: settings.allowedUrls || [],
+      hashedQuitPassword: settings.quitPassword
+        ? crypto.createHash('sha256').update(settings.quitPassword).digest('hex')
+        : '',
+    };
+
+    // Patch the Canvas quiz with the access code
+    const patchResponse = await fetch(`${apiUrl}/courses/${courseId}/quizzes/${quizId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${apiToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        quiz: {
+          access_code: accessCode,
+        }
+      })
+    });
+
+    if (!patchResponse.ok) {
+      const err = await patchResponse.text();
+      throw new Error(`Failed to update quiz: ${err}`);
+    }
+
+    const updatedQuiz = await patchResponse.json();
+
+    console.log(`✅ SEB applied to quiz "${updatedQuiz.title}" (access code: ${accessCode})`);
+
+    res.json({
+      success: true,
+      quizId,
+      accessCode,
+      sebConfig,
+      message: `SEB protection applied to "${updatedQuiz.title}"`,
+    });
+  } catch (err) {
+    console.error('Error applying SEB:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

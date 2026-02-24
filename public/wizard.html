@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEB Exam Creator</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      color: #2d3b45;
+      background: #f5f5f5;
+      line-height: 1.5;
+    }
+
+    /* ── Top Bar ──────────────────────────────────────────────── */
+    .topbar {
+      background: #0055a2;
+      color: #fff;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .topbar h1 { font-size: 18px; font-weight: 600; }
+    .topbar .ctx { font-size: 13px; opacity: 0.85; }
+
+    /* ── Layout ───────────────────────────────────────────────── */
+    .container { max-width: 960px; margin: 24px auto; padding: 0 20px; }
+
+    /* ── Cards ────────────────────────────────────────────────── */
+    .card {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 14px 20px;
+      font-weight: 600;
+      font-size: 15px;
+      border-bottom: 1px solid #e0e0e0;
+      background: #fafafa;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .card-body { padding: 20px; }
+
+    /* ── Quiz List ────────────────────────────────────────────── */
+    .quiz-list { list-style: none; }
+    .quiz-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .quiz-item:last-child { border-bottom: none; }
+    .quiz-info { flex: 1; }
+    .quiz-title { font-weight: 600; font-size: 14px; }
+    .quiz-meta { font-size: 12px; color: #666; margin-top: 2px; }
+    .badge {
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge-open { background: #ffeeba; color: #856404; }
+    .badge-protected { background: #c3e6cb; color: #155724; }
+    .badge-error { background: #f5c6cb; color: #721c24; }
+
+    /* ── Buttons ──────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-primary { background: #0055a2; color: #fff; }
+    .btn-primary:hover { background: #003d7a; }
+    .btn-primary:disabled { background: #9cc; cursor: not-allowed; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+    .btn-outline {
+      background: transparent;
+      border: 1px solid #0055a2;
+      color: #0055a2;
+    }
+    .btn-outline:hover { background: #e8f0fe; }
+    .btn-danger { background: #dc3545; color: #fff; }
+    .btn-danger:hover { background: #b02a37; }
+    .btn-ghost { background: transparent; color: #666; }
+    .btn-ghost:hover { background: #f0f0f0; }
+
+    /* ── Preset Selector ─────────────────────────────────────── */
+    .preset-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+    .preset-card {
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 16px;
+      cursor: pointer;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      position: relative;
+    }
+    .preset-card:hover { border-color: #0055a2; }
+    .preset-card.selected {
+      border-color: #0055a2;
+      box-shadow: 0 0 0 3px rgba(0, 85, 162, 0.15);
+    }
+    .preset-card .preset-icon { font-size: 24px; margin-bottom: 8px; }
+    .preset-card .preset-name { font-weight: 600; font-size: 14px; }
+    .preset-card .preset-desc { font-size: 12px; color: #666; margin-top: 4px; }
+    .preset-card .checkmark {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #0055a2;
+      color: #fff;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+    }
+    .preset-card.selected .checkmark { display: flex; }
+
+    /* ── Settings Panel ──────────────────────────────────────── */
+    .settings-panel { display: none; }
+    .settings-panel.visible { display: block; }
+    .setting-group {
+      margin-bottom: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .setting-group:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .setting-group h4 { font-size: 13px; font-weight: 600; margin-bottom: 10px; color: #444; }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 0;
+    }
+    .setting-label { font-size: 13px; }
+    .setting-hint { font-size: 11px; color: #888; margin-top: 1px; }
+
+    /* Toggle switches */
+    .toggle {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle .slider {
+      position: absolute;
+      inset: 0;
+      background: #ccc;
+      border-radius: 24px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle .slider::before {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      left: 3px;
+      bottom: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .toggle input:checked + .slider { background: #0055a2; }
+    .toggle input:checked + .slider::before { transform: translateX(20px); }
+
+    /* Text inputs */
+    .input-sm {
+      padding: 6px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+      width: 200px;
+    }
+    .input-sm:focus { outline: none; border-color: #0055a2; box-shadow: 0 0 0 2px rgba(0,85,162,0.15); }
+
+    /* ── Modal / Drawer ──────────────────────────────────────── */
+    .drawer-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 100;
+    }
+    .drawer-overlay.open { display: block; }
+    .drawer {
+      position: fixed;
+      top: 0;
+      right: -520px;
+      width: 500px;
+      max-width: 90vw;
+      height: 100%;
+      background: #fff;
+      box-shadow: -4px 0 24px rgba(0,0,0,0.15);
+      z-index: 101;
+      transition: right 0.25s ease;
+      display: flex;
+      flex-direction: column;
+    }
+    .drawer-overlay.open .drawer { right: 0; }
+    .drawer-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .drawer-header h2 { font-size: 16px; }
+    .drawer-body { flex: 1; overflow-y: auto; padding: 20px; }
+    .drawer-footer {
+      padding: 16px 20px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    /* ── Status / Feedback ───────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 12px 20px;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      z-index: 200;
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all 0.3s;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast-success { background: #28a745; }
+    .toast-error { background: #dc3545; }
+
+    .loading { text-align: center; padding: 40px; color: #888; }
+    .spinner {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border: 3px solid #e0e0e0;
+      border-top-color: #0055a2;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      margin-bottom: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .empty-state {
+      text-align: center;
+      padding: 48px 20px;
+      color: #888;
+    }
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+
+  <!-- ── Top Bar ──────────────────────────────────────────── -->
+  <div class="topbar">
+    <h1>🔒 SEB Exam Creator</h1>
+    <div class="ctx">
+      <span id="ctx-course"></span> · <span id="ctx-user"></span>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <!-- ── Quiz List Card ─────────────────────────────────── -->
+    <div class="card">
+      <div class="card-header">
+        <span>Course Quizzes</span>
+        <button class="btn btn-sm btn-outline" onclick="loadQuizzes()">↻ Refresh</button>
+      </div>
+      <div class="card-body">
+        <div id="quiz-loading" class="loading">
+          <div class="spinner"></div>
+          <div>Loading quizzes from Canvas…</div>
+        </div>
+        <div id="quiz-empty" class="empty-state" style="display:none;">
+          <div class="icon">📝</div>
+          <div>No quizzes found in this course.</div>
+          <div style="margin-top:8px;font-size:13px;">Create a quiz in Canvas first, then refresh.</div>
+        </div>
+        <ul id="quiz-list" class="quiz-list" style="display:none;"></ul>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── SEB Config Drawer ────────────────────────────────── -->
+  <div id="drawer-overlay" class="drawer-overlay">
+    <div class="drawer">
+      <div class="drawer-header">
+        <h2>Configure SEB Protection</h2>
+        <button class="btn btn-ghost" onclick="closeDrawer()">✕</button>
+      </div>
+      <div class="drawer-body">
+
+        <!-- Quiz being configured -->
+        <div style="margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #e0e0e0;">
+          <div style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:0.5px;">Configuring</div>
+          <div id="drawer-quiz-title" style="font-weight:600;font-size:16px;margin-top:4px;"></div>
+        </div>
+
+        <!-- Preset Selector -->
+        <div style="margin-bottom:20px;">
+          <h4 style="font-size:13px;font-weight:600;margin-bottom:10px;">Security Preset</h4>
+          <div class="preset-grid">
+            <div class="preset-card selected" data-preset="standard" onclick="selectPreset(this)">
+              <div class="checkmark">✓</div>
+              <div class="preset-icon">🛡️</div>
+              <div class="preset-name">Standard Exam</div>
+              <div class="preset-desc">Kiosk mode, no copy/paste, no screenshots. Most common.</div>
+            </div>
+            <div class="preset-card" data-preset="open-note" onclick="selectPreset(this)">
+              <div class="checkmark">✓</div>
+              <div class="preset-icon">📖</div>
+              <div class="preset-name">Open-Note</div>
+              <div class="preset-desc">Allows specific URLs and clipboard. Windowed mode.</div>
+            </div>
+            <div class="preset-card" data-preset="high-security" onclick="selectPreset(this)">
+              <div class="checkmark">✓</div>
+              <div class="preset-icon">🔐</div>
+              <div class="preset-name">High-Security</div>
+              <div class="preset-desc">Maximum lockdown. No clock, no reload, VM blocked.</div>
+            </div>
+            <div class="preset-card" data-preset="custom" onclick="selectPreset(this)">
+              <div class="checkmark">✓</div>
+              <div class="preset-icon">⚙️</div>
+              <div class="preset-name">Custom</div>
+              <div class="preset-desc">Configure every setting manually.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detailed Settings (always visible, editable in any mode) -->
+        <div class="settings-panel visible" id="settings-panel">
+
+          <div class="setting-group">
+            <h4>Browser Behavior</h4>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Kiosk Mode (Full Screen)</div>
+                <div class="setting-hint">Forces full-screen, hides taskbar</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="seb-kiosk" checked /><span class="slider"></span></label>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Show Reload Button</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="seb-reload" checked /><span class="slider"></span></label>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Show Clock</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="seb-clock" checked /><span class="slider"></span></label>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Allow Navigation Back/Forward</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="seb-nav" /><span class="slider"></span></label>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <h4>Security Restrictions</h4>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Block Clipboard (Copy/Paste)</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="seb-clipboard" checked /><span class="slider"></span></label>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Block Screenshots</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="seb-screenshots" checked /><span class="slider"></span></label>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Block Virtual Machines</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="seb-vm" checked /><span class="slider"></span></label>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Block Screen Sharing</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="seb-screenshare" checked /><span class="slider"></span></label>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Monitor Processes</div>
+                <div class="setting-hint">Detects and kills disallowed applications</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="seb-processes" checked /><span class="slider"></span></label>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <h4>Input & Assistance</h4>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Allow Spell Check</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="seb-spell" /><span class="slider"></span></label>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Allow Dictionary Lookup</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="seb-dict" /><span class="slider"></span></label>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Allow Siri / Voice Assistant</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="seb-siri" /><span class="slider"></span></label>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <h4>URL Filtering</h4>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Enable URL Filter</div>
+                <div class="setting-hint">Only allow specified domains</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="seb-urlfilter" checked /><span class="slider"></span></label>
+            </div>
+            <div style="margin-top:10px;">
+              <label style="font-size:12px;font-weight:600;color:#444;">Allowed URLs (one per line)</label>
+              <textarea id="seb-allowed-urls" rows="3"
+                style="width:100%;margin-top:4px;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:13px;font-family:monospace;resize:vertical;"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <h4>Access</h4>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Exit / Quit Password</div>
+                <div class="setting-hint">Students need this to close SEB</div>
+              </div>
+              <input type="text" id="seb-quit-password" class="input-sm" placeholder="Leave blank for none" />
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Quiz Access Code</div>
+                <div class="setting-hint">Auto-generated if blank. Set on Canvas quiz.</div>
+              </div>
+              <input type="text" id="seb-access-code" class="input-sm" placeholder="Auto-generate" />
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="drawer-footer">
+        <button class="btn btn-ghost" onclick="closeDrawer()">Cancel</button>
+        <button class="btn btn-primary" id="btn-apply" onclick="applySEB()">
+          Apply SEB Protection
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Toast ────────────────────────────────────────────── -->
+  <div id="toast" class="toast"></div>
+
+  <!-- ── JavaScript ───────────────────────────────────────── -->
+  <script>
+    // ── State ──────────────────────────────────────────────
+    let launchContext = {};
+    let quizzes = [];
+    let selectedQuizId = null;
+
+    // ── Presets ────────────────────────────────────────────
+    const PRESETS = {
+      'standard': {
+        'seb-kiosk': true, 'seb-reload': true, 'seb-clock': true, 'seb-nav': false,
+        'seb-clipboard': true, 'seb-screenshots': true, 'seb-vm': true,
+        'seb-screenshare': true, 'seb-processes': true,
+        'seb-spell': false, 'seb-dict': false, 'seb-siri': false,
+        'seb-urlfilter': true
+      },
+      'open-note': {
+        'seb-kiosk': false, 'seb-reload': true, 'seb-clock': true, 'seb-nav': true,
+        'seb-clipboard': false, 'seb-screenshots': true, 'seb-vm': true,
+        'seb-screenshare': true, 'seb-processes': false,
+        'seb-spell': true, 'seb-dict': true, 'seb-siri': false,
+        'seb-urlfilter': true
+      },
+      'high-security': {
+        'seb-kiosk': true, 'seb-reload': false, 'seb-clock': false, 'seb-nav': false,
+        'seb-clipboard': true, 'seb-screenshots': true, 'seb-vm': true,
+        'seb-screenshare': true, 'seb-processes': true,
+        'seb-spell': false, 'seb-dict': false, 'seb-siri': false,
+        'seb-urlfilter': true
+      },
+      'custom': null  // don't change toggles
+    };
+
+    // ── Init ───────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', () => {
+      // Context is injected as a global by the server-rendered script tag
+      if (window.__LTI_CONTEXT__) {
+        launchContext = window.__LTI_CONTEXT__;
+      }
+
+      document.getElementById('ctx-course').textContent = launchContext.courseTitle || 'Course';
+      document.getElementById('ctx-user').textContent = launchContext.userName || 'Instructor';
+
+      // Set default allowed URL
+      const domain = launchContext.canvasDomain || 'canvas.docker';
+      document.getElementById('seb-allowed-urls').value = domain + '/*';
+
+      loadQuizzes();
+    });
+
+    // ── API Helpers ────────────────────────────────────────
+    async function api(path, opts = {}) {
+      const res = await fetch(path, {
+        headers: { 'Content-Type': 'application/json', ...opts.headers },
+        ...opts
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || err.message || 'Request failed');
+      }
+      return res.json();
+    }
+
+    // ── Load Quizzes ───────────────────────────────────────
+    async function loadQuizzes() {
+      const listEl = document.getElementById('quiz-list');
+      const loadEl = document.getElementById('quiz-loading');
+      const emptyEl = document.getElementById('quiz-empty');
+
+      listEl.style.display = 'none';
+      emptyEl.style.display = 'none';
+      loadEl.style.display = 'block';
+
+      try {
+        const courseId = launchContext.courseId;
+        quizzes = await api(`/api/courses/${courseId}/quizzes`);
+
+        loadEl.style.display = 'none';
+
+        if (quizzes.length === 0) {
+          emptyEl.style.display = 'block';
+          return;
+        }
+
+        listEl.innerHTML = quizzes.map(q => `
+          <li class="quiz-item">
+            <div class="quiz-info">
+              <div class="quiz-title">${escHtml(q.title)}</div>
+              <div class="quiz-meta">
+                ${q.question_count || 0} questions · ${q.points_possible || 0} pts
+                ${q.time_limit ? ' · ' + q.time_limit + ' min' : ''}
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="badge ${q.access_code ? 'badge-protected' : 'badge-open'}">
+                ${q.access_code ? '🔒 SEB' : '🔓 Open'}
+              </span>
+              <button class="btn btn-sm btn-primary" onclick="openDrawer(${q.id})">
+                ${q.access_code ? 'Edit' : 'Protect'}
+              </button>
+            </div>
+          </li>
+        `).join('');
+
+        listEl.style.display = 'block';
+      } catch (err) {
+        loadEl.style.display = 'none';
+        listEl.innerHTML = `<li class="quiz-item" style="color:#dc3545;">Error loading quizzes: ${escHtml(err.message)}</li>`;
+        listEl.style.display = 'block';
+      }
+    }
+
+    // ── Drawer / Config Panel ──────────────────────────────
+    function openDrawer(quizId) {
+      selectedQuizId = quizId;
+      const quiz = quizzes.find(q => q.id === quizId);
+      document.getElementById('drawer-quiz-title').textContent = quiz ? quiz.title : 'Quiz #' + quizId;
+
+      // Reset to standard preset
+      selectPreset(document.querySelector('[data-preset="standard"]'));
+
+      document.getElementById('drawer-overlay').classList.add('open');
+    }
+
+    function closeDrawer() {
+      document.getElementById('drawer-overlay').classList.remove('open');
+      selectedQuizId = null;
+    }
+
+    // Close drawer on overlay click
+    document.addEventListener('click', (e) => {
+      if (e.target.id === 'drawer-overlay') closeDrawer();
+    });
+
+    // ── Preset Selection ───────────────────────────────────
+    function selectPreset(el) {
+      document.querySelectorAll('.preset-card').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+
+      const preset = el.dataset.preset;
+      const settings = PRESETS[preset];
+      if (!settings) return; // custom — don't change toggles
+
+      Object.entries(settings).forEach(([id, val]) => {
+        const input = document.getElementById(id);
+        if (input) input.checked = val;
+      });
+    }
+
+    // ── Apply SEB ──────────────────────────────────────────
+    async function applySEB() {
+      if (!selectedQuizId) return;
+
+      const btn = document.getElementById('btn-apply');
+      btn.disabled = true;
+      btn.textContent = 'Applying…';
+
+      try {
+        const config = {
+          quizId: selectedQuizId,
+          courseId: launchContext.courseId,
+          preset: document.querySelector('.preset-card.selected')?.dataset.preset || 'standard',
+          settings: {
+            kioskMode:          document.getElementById('seb-kiosk').checked,
+            showReloadButton:   document.getElementById('seb-reload').checked,
+            showTime:           document.getElementById('seb-clock').checked,
+            allowNavigation:    document.getElementById('seb-nav').checked,
+            blockClipboard:     document.getElementById('seb-clipboard').checked,
+            blockScreenshots:   document.getElementById('seb-screenshots').checked,
+            blockVM:            document.getElementById('seb-vm').checked,
+            blockScreenSharing: document.getElementById('seb-screenshare').checked,
+            monitorProcesses:   document.getElementById('seb-processes').checked,
+            allowSpellCheck:    document.getElementById('seb-spell').checked,
+            allowDictionary:    document.getElementById('seb-dict').checked,
+            allowSiri:          document.getElementById('seb-siri').checked,
+            urlFilterEnabled:   document.getElementById('seb-urlfilter').checked,
+            allowedUrls:        document.getElementById('seb-allowed-urls').value.split('\n').map(u => u.trim()).filter(Boolean),
+            quitPassword:       document.getElementById('seb-quit-password').value,
+            accessCode:         document.getElementById('seb-access-code').value,
+          }
+        };
+
+        const result = await api('/api/seb/apply', {
+          method: 'POST',
+          body: JSON.stringify(config)
+        });
+
+        showToast('SEB protection applied successfully!', 'success');
+        closeDrawer();
+        loadQuizzes(); // Refresh to show updated status
+      } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Apply SEB Protection';
+      }
+    }
+
+    // ── Toast Notifications ────────────────────────────────
+    function showToast(message, type = 'success') {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.className = `toast toast-${type} show`;
+      setTimeout(() => toast.classList.remove('show'), 3500);
+    }
+
+    // ── Utility ────────────────────────────────────────────
+    function escHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
