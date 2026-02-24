@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 98.5%;
+    --foreground: 215 25% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 215 25% 12%;
+
+    --primary: 215 65% 36%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 215 15% 93%;
+    --secondary-foreground: 215 25% 20%;
+
+    --muted: 215 15% 95%;
+    --muted-foreground: 215 12% 50%;
+
+    --accent: 162 60% 40%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 215 15% 90%;
+    --input: 215 15% 88%;
+    --ring: 215 65% 36%;
+
+    --radius: 0.625rem;
+
+    --font-sans: "DM Sans", system-ui, -apple-system, sans-serif;
+    --font-mono: "JetBrains Mono", "Fira Code", monospace;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+  }
+}
+
+/* Staggered fade-in for grid items */
+.stagger-fade > * {
+  opacity: 0;
+  animation: fade-in 0.4s ease-out forwards;
+}
+.stagger-fade > *:nth-child(1) { animation-delay: 0.04s; }
+.stagger-fade > *:nth-child(2) { animation-delay: 0.08s; }
+.stagger-fade > *:nth-child(3) { animation-delay: 0.12s; }
+.stagger-fade > *:nth-child(4) { animation-delay: 0.16s; }
+.stagger-fade > *:nth-child(5) { animation-delay: 0.20s; }
+.stagger-fade > *:nth-child(6) { animation-delay: 0.24s; }
+.stagger-fade > *:nth-child(7) { animation-delay: 0.28s; }
+.stagger-fade > *:nth-child(8) { animation-delay: 0.32s; }
+.stagger-fade > *:nth-child(9) { animation-delay: 0.36s; }
+.stagger-fade > *:nth-child(10) { animation-delay: 0.40s; }
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Subtle shimmer loading state */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted)) 25%,
+    hsl(var(--background)) 50%,
+    hsl(var(--muted)) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}

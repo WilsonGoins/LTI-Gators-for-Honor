@@ -1,11 +1,25 @@
 // Entry point — manual LTI 1.3 OIDC flow (no ltijs dependency)
 // Based on https://blog.devendran.in/build-lti13-tool-canvas-lms
+//
+// After successful LTI launch, redirects to a Next.js frontend
+// and exposes /api/context so the frontend can fetch LTI session data.
 
 const express = require('express');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const { tool, platform: platformConfig } = require('./config');
 
 const app = express();
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+// Secret used to sign session JWTs — in production, use a proper secret from env
+const SESSION_SECRET =
+  process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+
+// Where the Next.js dev server is running
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3002';
 
 // ---------------------------------------------------------------------------
 // Middleware
@@ -24,10 +38,21 @@ app.use((req, res, next) => {
   next();
 });
 
+// CORS — allow the Next.js frontend to call our API
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', FRONTEND_URL);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 // ---------------------------------------------------------------------------
 // In-memory stores (use Redis/DB in production)
 // ---------------------------------------------------------------------------
 const nonceStore = new Map();
+const sessionStore = new Map(); // sessionToken → LTI context
 let privateKey;
 let publicJwk;
 
@@ -41,7 +66,6 @@ async function initializeKeys() {
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
   });
 
-  // Export public key as JWK using built-in crypto
   const keyObject = crypto.createPublicKey(publicKey);
   const jwk = keyObject.export({ format: 'jwk' });
   jwk.kid = 'seb-tool-key-1';
@@ -53,6 +77,59 @@ async function initializeKeys() {
   console.log('✅ RSA keys generated for JWKS');
 }
 
+// ---------------------------------------------------------------------------
+// Helper — create a signed session token for the frontend
+// ---------------------------------------------------------------------------
+function createSessionToken(context) {
+  const sessionId = crypto.randomUUID();
+  // Store full context server-side; the token is just a handle
+  sessionStore.set(sessionId, {
+    ...context,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 4 * 60 * 60 * 1000, // 4 hours
+  });
+  // Sign a lightweight JWT containing only the session ID
+  const token = jwt.sign({ sid: sessionId }, SESSION_SECRET, {
+    expiresIn: '4h',
+  });
+  return token;
+}
+
+// ---------------------------------------------------------------------------
+// API — Frontend fetches LTI context with the session token
+// ---------------------------------------------------------------------------
+app.get('/api/context', (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing authorization token' });
+    }
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, SESSION_SECRET);
+    const session = sessionStore.get(decoded.sid);
+
+    if (!session) {
+      return res.status(401).json({ error: 'Session not found or expired' });
+    }
+    if (session.expiresAt < Date.now()) {
+      sessionStore.delete(decoded.sid);
+      return res.status(401).json({ error: 'Session expired' });
+    }
+
+    // Return the LTI context to the frontend
+    res.json({
+      courseId: session.courseId,
+      courseTitle: session.courseTitle,
+      userName: session.userName,
+      userEmail: session.userEmail,
+      roles: session.roles,
+      canvasUrl: session.canvasUrl,
+    });
+  } catch (err) {
+    console.error('Context fetch error:', err.message);
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // JWKS endpoint — Canvas fetches our public key from here
@@ -61,13 +138,12 @@ app.get('/keys', (req, res) => {
   res.json({ keys: [publicJwk] });
 });
 
-// Also support /jwks.json for compatibility
 app.get('/jwks.json', (req, res) => {
   res.json({ keys: [publicJwk] });
 });
 
 // ---------------------------------------------------------------------------
-// Health check (no auth required)
+// Health check
 // ---------------------------------------------------------------------------
 app.get('/health', (req, res) => {
   res.json({
@@ -107,16 +183,14 @@ app.post('/lti/login', (req, res) => {
     const nonce = crypto.randomUUID();
     const state = crypto.randomUUID();
 
-    // Store nonce for validation in the launch step
     nonceStore.set(state, {
       nonce,
       client_id,
       iss,
       lti_deployment_id,
-      expiresAt: Date.now() + 10 * 60 * 1000, // 10 min TTL
+      expiresAt: Date.now() + 10 * 60 * 1000,
     });
 
-    // Redirect to Canvas authorize endpoint
     const canvasUrl = platformConfig.canvasUrl || 'http://localhost:3000';
     const authUrl = new URL(`${canvasUrl}/api/lti/authorize`);
     authUrl.searchParams.append('scope', 'openid');
@@ -143,14 +217,14 @@ app.post('/lti/login', (req, res) => {
 // ---------------------------------------------------------------------------
 // LTI Launch — Step 3 of OIDC handshake
 // Canvas POSTs the id_token here after authorization.
-// We validate the JWT, extract user/course info, render the tool.
+// We validate the JWT, extract user/course info, then REDIRECT to Next.js.
 // ---------------------------------------------------------------------------
 app.post('/lti/launch', async (req, res) => {
   try {
-    console.log('Launch body:', JSON.stringify(req.body));        // todo: remove
-    
     if (req.body.error) {
-      throw new Error(`Canvas returned error: ${req.body.error} — ${req.body.error_description}`);
+      throw new Error(
+        `Canvas returned error: ${req.body.error} — ${req.body.error_description}`
+      );
     }
     const { id_token, state } = req.body;
 
@@ -223,9 +297,12 @@ app.post('/lti/launch', async (req, res) => {
     console.log('✅ JWT signature verified');
 
     // Extract LTI claims
-    const ltiContext = payload['https://purl.imsglobal.org/spec/lti/claim/context'] || {};
-    const roles = payload['https://purl.imsglobal.org/spec/lti/claim/roles'] || [];
-    const custom = payload['https://purl.imsglobal.org/spec/lti/claim/custom'] || {};
+    const ltiContext =
+      payload['https://purl.imsglobal.org/spec/lti/claim/context'] || {};
+    const roles =
+      payload['https://purl.imsglobal.org/spec/lti/claim/roles'] || [];
+    const custom =
+      payload['https://purl.imsglobal.org/spec/lti/claim/custom'] || {};
 
     const context = {
       courseId: ltiContext.id,
@@ -233,6 +310,7 @@ app.post('/lti/launch', async (req, res) => {
       userName: payload.name || custom.user_name_full || 'Unknown',
       userEmail: payload.email || custom.user_email || 'N/A',
       roles: roles.map((r) => r.split('#').pop()),
+      canvasUrl,
     };
 
     console.log('User:', context.userName);
@@ -260,86 +338,17 @@ app.post('/lti/launch', async (req, res) => {
       `);
     }
 
-    // Render the tool
-    return res.send(`
-      <html>
-        <head>
-          <title>SEB Exam Creator</title>
-          <style>
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              max-width: 800px;
-              margin: 40px auto;
-              padding: 0 20px;
-              color: #333;
-            }
-            .success-banner {
-              background: #d4edda;
-              border: 1px solid #c3e6cb;
-              border-radius: 8px;
-              padding: 20px;
-              margin-bottom: 24px;
-            }
-            .context-card {
-              background: #f8f9fa;
-              border: 1px solid #dee2e6;
-              border-radius: 8px;
-              padding: 20px;
-              margin-bottom: 24px;
-            }
-            .context-card h3 { margin-top: 0; }
-            .context-item { margin: 8px 0; }
-            .label { font-weight: 600; color: #555; }
-            .actions { margin-top: 24px; }
-            .btn {
-              display: inline-block;
-              padding: 12px 24px;
-              background: #0066cc;
-              color: white;
-              text-decoration: none;
-              border-radius: 6px;
-              margin-right: 12px;
-            }
-            .btn:hover { background: #0052a3; }
-            .btn-secondary { background: #6c757d; }
-          </style>
-        </head>
-        <body>
-          <div class="success-banner">
-            ✅ <strong>LTI Launch Successful!</strong> — Tool is connected to Canvas.
-          </div>
+    // -----------------------------------------------------------------------
+    // SUCCESS — Create session and redirect to the Next.js frontend
+    // -----------------------------------------------------------------------
+    const sessionToken = createSessionToken(context);
 
-          <h1>🔒 SEB Exam Creator</h1>
+    // Redirect to the Next.js frontend with the session token
+    const redirectUrl = new URL(FRONTEND_URL);
+    redirectUrl.searchParams.set('token', sessionToken);
 
-          <div class="context-card">
-            <h3>Launch Context</h3>
-            <div class="context-item"><span class="label">Instructor:</span> ${context.userName}</div>
-            <div class="context-item"><span class="label">Email:</span> ${context.userEmail}</div>
-            <div class="context-item"><span class="label">Course:</span> ${context.courseTitle || 'N/A'}</div>
-            <div class="context-item"><span class="label">Course ID:</span> ${context.courseId || 'N/A'}</div>
-            <div class="context-item"><span class="label">Roles:</span> ${context.roles.join(', ')}</div>
-          </div>
-
-          <div class="context-card">
-            <h3>Available Actions</h3>
-            <div class="actions">
-              <a class="btn" href="/seb/generate-test" target="_blank">Generate Test .seb File</a>
-              <a class="btn btn-secondary" href="/health" target="_blank">Health Check</a>
-            </div>
-          </div>
-
-          <div class="context-card">
-            <h3>Next Steps</h3>
-            <p>The LTI connection is working. Next tasks:</p>
-            <ol>
-              <li>Build the quiz creation wizard UI</li>
-              <li>Connect wizard to Canvas Quiz API</li>
-              <li>Generate .seb config files based on wizard selections</li>
-            </ol>
-          </div>
-        </body>
-      </html>
-    `);
+    console.log(`✅ Redirecting to frontend: ${redirectUrl.toString()}`);
+    return res.redirect(redirectUrl.toString());
   } catch (error) {
     console.error('Launch error:', error);
     res.status(500).send(`
@@ -361,6 +370,12 @@ const sebRoutes = require('./routes/seb');
 app.use('/seb', sebRoutes);
 
 // ---------------------------------------------------------------------------
+// LTI info routes (development only)
+// ---------------------------------------------------------------------------
+const ltiRoutes = require('./routes/lti');
+app.use('/lti-info', ltiRoutes);
+
+// ---------------------------------------------------------------------------
 // Root — simple status page
 // ---------------------------------------------------------------------------
 app.get('/', (req, res) => {
@@ -369,6 +384,7 @@ app.get('/', (req, res) => {
       <body style="font-family: sans-serif; padding: 40px;">
         <h1>🔒 SEB Exam Creator - LTI Tool</h1>
         <p>Status: Running</p>
+        <p>Frontend: <a href="${FRONTEND_URL}">${FRONTEND_URL}</a></p>
         <p>JWKS: <a href="/keys">/keys</a></p>
         <p>Health: <a href="/health">/health</a></p>
         <p>This tool must be launched from Canvas via LTI.</p>
@@ -385,11 +401,12 @@ async function start() {
 
   app.listen(tool.port, () => {
     console.log(`\n🚀 SEB Exam Creator LTI Tool running on port ${tool.port}`);
-    console.log(`   Tool URL:  ${tool.url}`);
-    console.log(`   Health:    ${tool.url}/health`);
-    console.log(`   JWKS:      ${tool.url}/keys`);
-    console.log(`   Canvas:    ${platformConfig.canvasUrl || 'not configured'}`);
-    console.log(`   Client ID: ${platformConfig.clientId || 'not configured'}\n`);
+    console.log(`   Tool URL:    ${tool.url}`);
+    console.log(`   Frontend:    ${FRONTEND_URL}`);
+    console.log(`   Health:      ${tool.url}/health`);
+    console.log(`   JWKS:        ${tool.url}/keys`);
+    console.log(`   Canvas:      ${platformConfig.canvasUrl || 'not configured'}`);
+    console.log(`   Client ID:   ${platformConfig.clientId || 'not configured'}\n`);
   });
 }
 
