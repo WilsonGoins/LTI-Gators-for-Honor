@@ -15,9 +15,34 @@ This guide walks you through setting up the complete development environment fro
 | [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Latest | Runs Canvas LMS and MongoDB |
 | [Node.js](https://nodejs.org/) | 18+ (recommend 20) | Runs the LTI tool |
 | [Git](https://git-scm.com/) | Latest | Version control |
-| RAM | 8 GB minimum | Docker needs ~6 GB for Canvas |
+| RAM | 12 GB minimum | Docker needs ~8–10 GB for Canvas |
 
-**Docker Desktop settings:** Allocate at least 6 GB of RAM to Docker (Settings → Resources → Memory).
+### Docker Desktop Memory Configuration
+
+Canvas LMS is very resource-intensive. You **must** allocate sufficient memory or Canvas will fail to start with Passenger timeout errors.
+
+**Windows (WSL 2 backend):**
+
+Docker Desktop on Windows uses WSL 2, so memory is configured via a `.wslconfig` file. Create or edit `C:\Users\<YourUsername>\.wslconfig`:
+
+```ini
+[wsl2]
+memory=10GB
+swap=4GB
+processors=4
+```
+
+After saving, restart WSL:
+
+```powershell
+wsl --shutdown
+```
+
+Then restart Docker Desktop.
+
+**Mac/Linux:**
+
+Go to Docker Desktop → Settings → Resources → Advanced. Set Memory to at least **8 GB** (10 GB recommended).
 
 ---
 
@@ -33,33 +58,51 @@ cd canvas
 
 ### 1.2 Copy Config Files
 
+Canvas requires several configuration files that must be copied from templates. **All five files are required:**
+
 ```bash
 # Windows PowerShell:
-copy config\database.yml.example config\database.yml
-copy config\domain.yml.example config\domain.yml
-copy config\security.yml.example config\security.yml
-copy config\dynamic_settings.yml.example config\dynamic_settings.yml
+copy docker-compose\config\database.yml config\database.yml
+copy docker-compose\config\redis.yml config\redis.yml
+copy docker-compose\config\domain.yml config\domain.yml
+copy docker-compose\config\security.yml config\security.yml
+copy docker-compose\config\dynamic_settings.yml config\dynamic_settings.yml
 
 # Mac/Linux:
-cp config/database.yml.example config/database.yml
-cp config/domain.yml.example config/domain.yml
-cp config/security.yml.example config/security.yml
-cp config/dynamic_settings.yml.example config/dynamic_settings.yml
+for file in database.yml redis.yml domain.yml security.yml dynamic_settings.yml; do
+  cp docker-compose/config/$file config/$file
+done
 ```
 
-### 1.3 Fix database.yml
+> **CRITICAL:** Do not skip `redis.yml` — Canvas will hang on startup without it. Do not skip `dynamic_settings.yml` — LTI 1.3 will not work without the signing keys it contains.
 
-Open `config/database.yml` in a text editor. Find every `host:`, `username:`, and `password:` entry and set them to:
+### 1.3 Configure database.yml
+
+Open `config/database.yml` in a text editor. Ensure the development section looks like:
 
 ```yaml
-host: postgres
-username: postgres
-password: sekret
+development:
+  adapter: postgresql
+  encoding: utf8
+  database: canvas_development
+  host: postgres
+  username: postgres
+  password: sekret
+  timeout: 5000
 ```
 
-Also remove or comment out any `secondary:` replica config blocks and `shard` references — they aren't needed for local dev and will cause errors.
+Also update the `test` and `production` sections similarly. Remove or comment out any `secondary:` replica config blocks and `shard` references — they aren't needed for local dev and will cause errors.
 
-### 1.4 Enable Docker Compose Override
+### 1.4 Configure domain.yml
+
+Open `config/domain.yml` and ensure it contains:
+
+```yaml
+development:
+  domain: "localhost:3000"
+```
+
+### 1.5 Enable Docker Compose Override
 
 ```bash
 # Windows:
@@ -69,7 +112,7 @@ copy docker-compose.override.yml.example docker-compose.override.yml
 cp docker-compose.override.yml.example docker-compose.override.yml
 ```
 
-Edit `docker-compose.override.yml` and add port mapping to the `web` service:
+Edit `docker-compose.override.yml` and ensure the `web` service has port mapping:
 
 ```yaml
 web:
@@ -77,7 +120,7 @@ web:
     - "3000:80"
 ```
 
-### 1.5 Create an Empty .env File
+### 1.6 Create an Empty .env File
 
 The webpack service references `.env` — it just needs to exist:
 
@@ -89,7 +132,31 @@ New-Item -Path .env -ItemType File
 touch .env
 ```
 
-### 1.6 Install Bundler Plugin
+### 1.7 Create the Passenger Timeout Fix
+
+Canvas is a large Rails application that can take over 90 seconds to boot on first startup. The default Passenger timeout of 90 seconds is often too short, especially on Windows/WSL 2. Create an entrypoint script to increase it.
+
+Create a file called `entrypoint-override.sh` in the Canvas project root:
+
+```bash
+#!/bin/bash
+sed -i 's/passenger_start_timeout 90/passenger_start_timeout 300/' /usr/src/nginx/nginx.conf
+exec "$@"
+```
+
+Then add this to the `web` service in your `docker-compose.override.yml`:
+
+```yaml
+web:
+  <<: *BASE
+  entrypoint: ["/bin/bash", "/usr/src/app/entrypoint-override.sh"]
+  ports:
+    - "3000:80"
+```
+
+> **Why is this needed?** Passenger (the app server) kills the Rails boot process if it takes longer than 90 seconds. On Docker Desktop with WSL 2, the first boot frequently exceeds this. Increasing the timeout to 300 seconds prevents false startup failures.
+
+### 1.8 Install Bundler Plugin
 
 ```bash
 docker compose run --rm web bash -c "gem install bundler-multilock && bundle install"
@@ -97,7 +164,7 @@ docker compose run --rm web bash -c "gem install bundler-multilock && bundle ins
 
 This takes several minutes. Wait for it to complete.
 
-### 1.7 Create the Database
+### 1.9 Create the Database
 
 ```bash
 docker compose run --rm web bundle exec rake db:create db:initial_setup
@@ -105,7 +172,7 @@ docker compose run --rm web bundle exec rake db:create db:initial_setup
 
 You'll be prompted to create an admin account. **Write down the email and password** — you'll need them to log into Canvas.
 
-### 1.8 Install JavaScript Dependencies
+### 1.10 Install JavaScript Dependencies
 
 ```bash
 docker compose run --rm web yarn install
@@ -119,7 +186,7 @@ docker volume rm canvas_node_modules   # may fail if volume name differs; that's
 docker compose run --rm web bash -c "yarn cache clean && yarn install --force"
 ```
 
-### 1.9 Compile Assets
+### 1.11 Compile Assets
 
 ```bash
 docker compose run --rm web bundle exec rake canvas:compile_assets_dev
@@ -127,54 +194,59 @@ docker compose run --rm web bundle exec rake canvas:compile_assets_dev
 
 **This takes 15–30 minutes.** Let it run — don't Ctrl+C. When finished, you'll get your command prompt back.
 
-### 1.10 Fix LTI 1.3 Signing Keys (CRITICAL)
+### 1.12 Verify dynamic_settings.yml Has LTI Signing Keys (CRITICAL)
 
-Self-hosted Canvas needs JWK signing keys for LTI 1.3. Check if your `dynamic_settings.yml` has them:
+Canvas needs JWK signing keys for LTI 1.3. The stock `dynamic_settings.yml` from `docker-compose/config/` should already include them under the `store` section.
 
-```bash
-docker compose exec web bash -c "grep 'lti-keys' /usr/src/app/config/dynamic_settings.yml"
-```
-
-If that returns nothing (no `lti-keys` section), you need to add JWK keys. Run this command to create the file with Canvas's example keys:
+Verify this critical section exists:
 
 ```bash
-docker compose exec web bash -c 'cat > /usr/src/app/config/dynamic_settings.yml << "EOF"
-development:
-  config:
-    canvas:
-      canvas:
-        encryption-secret: "astringthatisactually32telerik8"
-        signing-secret: "astringthatisactually32telerik8"
-      lti-keys:
-        jwk-past.json: "{\"p\":\"7yjEVGTsKilMEYpXXPEjDBFB_dHTVlfM9oHNP7XVywHxQ4FXbJnJqc5u29Cwz7MiXVJsqo3cAb3l3-YUNihJfMBjJSJGyzIXgGNj9oAj-VTiUoBAE1kT-V0KVv__Iz0wNvb-oFwmIuWNS8tkWiFjy43TeR5oPaJxJERMIFLHxzg7\",\"kty\":\"RSA\",\"q\":\"swuZlQi-NypxYo_VUixnFo5NHVXQB2bp84dJ4V7ukGygUFaxwwWAFgxkHdqr3EACunxGjYoFHpv68AlEVGrsOkJjF6PRMpVNdWMChZwh8fq_RYl1YfWTQOXIEkgGQP99bOp2LEq8TQ93-US-iyFUNwBxBNvrXKI_a5Y-i-gAj-n3\",\"d\":\"Ay3FhP7Cp3eSRHnNZ2jYa3X5vwthMIJdVllHakKfAhRlkChO-VKkIuPBBq6VoB5BIXZMuQiJkJ5wS8yp3BN8WDcJJPwV_lqUMM1ehcxjJnOX-qFYUPnHnNiTOCiFr0uBnFQE8UGHFmaH2PaqM1MZQF5NLy3--KZbIe5a_8WMDhDDTR5VZfKCFsnnrmJ9cOEUbIiD4ClBN5FZ-5rl33kMEWpvVJrMb9MRLWI8mVP8BPrxV7SOGzSPMoP_v_raSR_MimiNBVbCZCcXFxPRfldpf5UJ76Ho2pQZFaSNsAE_UmJ1FqXNJT_2bPQCqQ1ERk2Ql_3p7MaBBliSz_cphRp7_XQ\",\"e\":\"AQAB\",\"use\":\"sig\",\"kid\":\"sig-1530713613\",\"qi\":\"KOCAFdIh-WFnEb77SmkEJJimDQBJIy3YW-0VJbAjMnz0cL44HVFKg2NCh1IHBCW5Xeec95QShFCFfGjC31IWrAvhwmENT4h5xy_xGNg-UuLp9wZKwpFl6PnPSB1JlCmKjIWnfj9fSWM8C3p6snKZ3F2Cd7cnpDsBmm0KhkHJNU\",\"dp\":\"dNsR9j_Ui04et6ZFpFPbXA5RCBJ8GH7JajAl4MsRjZFb8dlw_6xEIJDJoVxFaW1e3LyCSEM_Fzh6gNJSVn0D-lHJgBfMHX_qVyV-0uHwWDdHPXKDjsIqcjM-jjlSaVj-T7dHa6qp8_DkEBR9rm01_t_czBYFE4TQNZ3nd3CcZ7M\",\"dq\":\"f3HWBuNzd_nDmq33xN3URll1IUlJV4FT4ItSSY5DXQB5UhPY4MHABFFjUbxIkp2w7IkB7zhRWCM1rxJ9i7O3AhLun3F1M9KmVJPt3sXRfR9vVyM_VVAi4u5MDV4RGcuo_OjE-t2RwcGe-fHJLfKzuoT3-Sqtbp7gEpjMPRzJfk\",\"n\":\"o7_eLBJSOGCIVSSMiGv5MR6KLfGr4DPUQ9t2Xv_YPm6brNXfS-qhMHNlpxERh3m4OxZtEi_4uCQcP9gFMIFiaw8EF7CGQW5dBLNLJQ2vY8E_ZE12s5nl0e2TNJJzLnriOqL_MziaCii7hsGAiV9AB_4YF7RUZOLgDl7F_YiixdRprpnHC0R5oPtF2-d64w1EJnnqJ3jL3P6gRdCJBvkDE9dUf7HfL-CqV_CqcOGwHJAhz5DDKFQ00H__xxbpTCUFdgORQHNyh45VsNT00kv3H8W1y2d1XX_MG6JFrjBFm7Sd22cBQ1Zv-m_JDKMq3Vh55eVxk8GHkQk-EUykJ-ssTmR0w\"}"
-        jwk-present.json: "{\"p\":\"7yjEVGTsKilMEYpXXPEjDBFB_dHTVlfM9oHNP7XVywHxQ4FXbJnJqc5u29Cwz7MiXVJsqo3cAb3l3-YUNihJfMBjJSJGyzIXgGNj9oAj-VTiUoBAE1kT-V0KVv__Iz0wNvb-oFwmIuWNS8tkWiFjy43TeR5oPaJxJERMIFLHxzg7\",\"kty\":\"RSA\",\"q\":\"swuZlQi-NypxYo_VUixnFo5NHVXQB2bp84dJ4V7ukGygUFaxwwWAFgxkHdqr3EACunxGjYoFHpv68AlEVGrsOkJjF6PRMpVNdWMChZwh8fq_RYl1YfWTQOXIEkgGQP99bOp2LEq8TQ93-US-iyFUNwBxBNvrXKI_a5Y-i-gAj-n3\",\"d\":\"Ay3FhP7Cp3eSRHnNZ2jYa3X5vwthMIJdVllHakKfAhRlkChO-VKkIuPBBq6VoB5BIXZMuQiJkJ5wS8yp3BN8WDcJJPwV_lqUMM1ehcxjJnOX-qFYUPnHnNiTOCiFr0uBnFQE8UGHFmaH2PaqM1MZQF5NLy3--KZbIe5a_8WMDhDDTR5VZfKCFsnnrmJ9cOEUbIiD4ClBN5FZ-5rl33kMEWpvVJrMb9MRLWI8mVP8BPrxV7SOGzSPMoP_v_raSR_MimiNBVbCZCcXFxPRfldpf5UJ76Ho2pQZFaSNsAE_UmJ1FqXNJT_2bPQCqQ1ERk2Ql_3p7MaBBliSz_cphRp7_XQ\",\"e\":\"AQAB\",\"use\":\"sig\",\"kid\":\"sig-1530713613\",\"qi\":\"KOCAFdIh-WFnEb77SmkEJJimDQBJIy3YW-0VJbAjMnz0cL44HVFKg2NCh1IHBCW5Xeec95QShFCFfGjC31IWrAvhwmENT4h5xy_xGNg-UuLp9wZKwpFl6PnPSB1JlCmKjIWnfj9fSWM8C3p6snKZ3F2Cd7cnpDsBmm0KhkHJNU\",\"dp\":\"dNsR9j_Ui04et6ZFpFPbXA5RCBJ8GH7JajAl4MsRjZFb8dlw_6xEIJDJoVxFaW1e3LyCSEM_Fzh6gNJSVn0D-lHJgBfMHX_qVyV-0uHwWDdHPXKDjsIqcjM-jjlSaVj-T7dHa6qp8_DkEBR9rm01_t_czBYFE4TQNZ3nd3CcZ7M\",\"dq\":\"f3HWBuNzd_nDmq33xN3URll1IUlJV4FT4ItSSY5DXQB5UhPY4MHABFFjUbxIkp2w7IkB7zhRWCM1rxJ9i7O3AhLun3F1M9KmVJPt3sXRfR9vVyM_VVAi4u5MDV4RGcuo_OjE-t2RwcGe-fHJLfKzuoT3-Sqtbp7gEpjMPRzJfk\",\"n\":\"o7_eLBJSOGCIVSSMiGv5MR6KLfGr4DPUQ9t2Xv_YPm6brNXfS-qhMHNlpxERh3m4OxZtEi_4uCQcP9gFMIFiaw8EF7CGQW5dBLNLJQ2vY8E_ZE12s5nl0e2TNJJzLnriOqL_MziaCii7hsGAiV9AB_4YF7RUZOLgDl7F_YiixdRprpnHC0R5oPtF2-d64w1EJnnqJ3jL3P6gRdCJBvkDE9dUf7HfL-CqV_CqcOGwHJAhz5DDKFQ00H__xxbpTCUFdgORQHNyh45VsNT00kv3H8W1y2d1XX_MG6JFrjBFm7Sd22cBQ1Zv-m_JDKMq3Vh55eVxk8GHkQk-EUykJ-ssTmR0w\"}"
-        jwk-future.json: "{\"p\":\"7yjEVGTsKilMEYpXXPEjDBFB_dHTVlfM9oHNP7XVywHxQ4FXbJnJqc5u29Cwz7MiXVJsqo3cAb3l3-YUNihJfMBjJSJGyzIXgGNj9oAj-VTiUoBAE1kT-V0KVv__Iz0wNvb-oFwmIuWNS8tkWiFjy43TeR5oPaJxJERMIFLHxzg7\",\"kty\":\"RSA\",\"q\":\"swuZlQi-NypxYo_VUixnFo5NHVXQB2bp84dJ4V7ukGygUFaxwwWAFgxkHdqr3EACunxGjYoFHpv68AlEVGrsOkJjF6PRMpVNdWMChZwh8fq_RYl1YfWTQOXIEkgGQP99bOp2LEq8TQ93-US-iyFUNwBxBNvrXKI_a5Y-i-gAj-n3\",\"d\":\"Ay3FhP7Cp3eSRHnNZ2jYa3X5vwthMIJdVllHakKfAhRlkChO-VKkIuPBBq6VoB5BIXZMuQiJkJ5wS8yp3BN8WDcJJPwV_lqUMM1ehcxjJnOX-qFYUPnHnNiTOCiFr0uBnFQE8UGHFmaH2PaqM1MZQF5NLy3--KZbIe5a_8WMDhDDTR5VZfKCFsnnrmJ9cOEUbIiD4ClBN5FZ-5rl33kMEWpvVJrMb9MRLWI8mVP8BPrxV7SOGzSPMoP_v_raSR_MimiNBVbCZCcXFxPRfldpf5UJ76Ho2pQZFaSNsAE_UmJ1FqXNJT_2bPQCqQ1ERk2Ql_3p7MaBBliSz_cphRp7_XQ\",\"e\":\"AQAB\",\"use\":\"sig\",\"kid\":\"sig-1530713613\",\"qi\":\"KOCAFdIh-WFnEb77SmkEJJimDQBJIy3YW-0VJbAjMnz0cL44HVFKg2NCh1IHBCW5Xeec95QShFCFfGjC31IWrAvhwmENT4h5xy_xGNg-UuLp9wZKwpFl6PnPSB1JlCmKjIWnfj9fSWM8C3p6snKZ3F2Cd7cnpDsBmm0KhkHJNU\",\"dp\":\"dNsR9j_Ui04et6ZFpFPbXA5RCBJ8GH7JajAl4MsRjZFb8dlw_6xEIJDJoVxFaW1e3LyCSEM_Fzh6gNJSVn0D-lHJgBfMHX_qVyV-0uHwWDdHPXKDjsIqcjM-jjlSaVj-T7dHa6qp8_DkEBR9rm01_t_czBYFE4TQNZ3nd3CcZ7M\",\"dq\":\"f3HWBuNzd_nDmq33xN3URll1IUlJV4FT4ItSSY5DXQB5UhPY4MHABFFjUbxIkp2w7IkB7zhRWCM1rxJ9i7O3AhLun3F1M9KmVJPt3sXRfR9vVyM_VVAi4u5MDV4RGcuo_OjE-t2RwcGe-fHJLfKzuoT3-Sqtbp7gEpjMPRzJfk\",\"n\":\"o7_eLBJSOGCIVSSMiGv5MR6KLfGr4DPUQ9t2Xv_YPm6brNXfS-qhMHNlpxERh3m4OxZtEi_4uCQcP9gFMIFiaw8EF7CGQW5dBLNLJQ2vY8E_ZE12s5nl0e2TNJJzLnriOqL_MziaCii7hsGAiV9AB_4YF7RUZOLgDl7F_YiixdRprpnHC0R5oPtF2-d64w1EJnnqJ3jL3P6gRdCJBvkDE9dUf7HfL-CqV_CqcOGwHJAhz5DDKFQ00H__xxbpTCUFdgORQHNyh45VsNT00kv3H8W1y2d1XX_MG6JFrjBFm7Sd22cBQ1Zv-m_JDKMq3Vh55eVxk8GHkQk-EUykJ-ssTmR0w\"}"
-EOF'
+# Windows PowerShell:
+Select-String -Path config\dynamic_settings.yml -Pattern "store:"
+
+# Mac/Linux:
+grep "store:" config/dynamic_settings.yml
 ```
 
-Then restart Canvas:
+You should see a line containing `store:`. If not, you copied the wrong file. Re-copy from the stock template:
 
 ```bash
-docker compose restart
+# Windows:
+copy docker-compose\config\dynamic_settings.yml config\dynamic_settings.yml
+
+# Mac/Linux:
+cp docker-compose/config/dynamic_settings.yml config/dynamic_settings.yml
 ```
 
-### 1.11 Start Canvas
+> **Why this matters:** Canvas stores its LTI signing keys under the `store > canvas > lti-keys` path in `dynamic_settings.yml`. If only the `config` section exists (without `store`), Canvas will crash with `NoMethodError: undefined method 'sign' for nil` when trying to sign LTI JWT tokens. This manifests as a 500 error during LTI launches with no useful error in the browser.
+
+### 1.13 Start Canvas
 
 ```bash
 docker compose up -d
 ```
 
-Open `http://localhost:3000` in your browser. Log in with the admin credentials you created in step 1.7.
+**Wait 3–4 minutes** for Canvas to fully boot. Canvas is a large Rails application and the first request triggers a slow initialization process.
 
-### 1.12 Verify LTI Signing Keys
+You can monitor startup progress with:
+
+```bash
+docker compose logs -f web
+```
+
+Look for `Passenger core online` followed by successful HTTP responses. If you see `A timeout occurred while starting a preloader process`, the Passenger timeout fix from step 1.7 is not applied — revisit that step.
+
+Open `http://localhost:3000` in your browser. Log in with the admin credentials you created in step 1.9.
+
+### 1.14 Verify LTI Signing Keys
 
 ```bash
 curl http://localhost:3000/api/lti/security/jwks
 ```
 
-You should see JSON with a `keys` array. If you get a 500 error, redo step 1.10.
+You should see JSON with a `keys` array. If you get a 500 error, redo step 1.12.
 
-**Canvas is now running. You only need to do steps 1.1–1.12 once. After this, `docker compose up -d` is all you need.**
+**Canvas is now running. You only need to do steps 1.1–1.14 once. After this, `docker compose up -d` (and waiting 3–4 minutes) is all you need.**
 
 ---
 
@@ -255,18 +327,18 @@ Verify: `http://localhost:3001/keys` should return a JSON object with a `keys` a
 | Field | Value |
 |-------|-------|
 | Key Name | `SEB Exam Creator` |
-| Redirect URIs | `http://localhost:3001` |
+| Redirect URIs | `http://localhost:3001/lti/launch` |
 | Title | `SEB Exam Creator` |
-| Target Link URI | `http://localhost:3001` |
+| Target Link URI | `http://localhost:3001/lti/launch` |
 | OpenID Connect Initiation URL | `http://localhost:3001/lti/login` |
 | JWK Method | Public JWK URL |
 | Public JWK URL | `http://host.docker.internal:3001/keys` |
 
-> **Why `host.docker.internal`?** Canvas runs inside Docker. When it needs to fetch your tool's public keys (server-to-server), `localhost` points to the container itself, not your host machine. `host.docker.internal` is Docker Desktop's way of reaching the host. This only applies to the JWK URL — all other URLs are browser-facing and use `localhost`.
+> **Why `host.docker.internal` for the JWK URL?** Canvas runs inside Docker. When it needs to fetch your tool's public keys (server-to-server), `localhost` points to the container itself, not your host machine. `host.docker.internal` is Docker Desktop's way of reaching the host. This only applies to the JWK URL — all other URLs are browser-facing and use `localhost`, since the user's browser can reach both `localhost:3000` (Canvas) and `localhost:3001` (the tool) directly.
 
 7. Enable all **LTI Advantage Services** checkboxes
 8. Under **Additional Settings**, set **Privacy Level** to **Public**
-9. Under **Placements**, add **Course Navigation** with Target Link URI: `http://localhost:3001`
+9. Under **Placements**, add **Course Navigation** with Target Link URI: `http://localhost:3001/lti/launch`
 10. Click **Save**
 
 ### 3.2 Enable the Key
@@ -275,14 +347,14 @@ Back on the Developer Keys list, find your new key. Toggle the **State** switch 
 
 ### 3.3 Copy the Client ID
 
-The Client ID is the number shown in the Details column (e.g., `10000000000001`). Copy it.
+The Client ID is the number shown in the Details column (e.g., `10000000000007`). Copy it.
 
 ### 3.4 Update .env
 
 Open your `.env` file and set:
 
 ```
-LTI_CLIENT_ID=10000000000001
+LTI_CLIENT_ID=10000000000007
 ```
 
 (Use whatever number you actually copied.)
@@ -309,22 +381,67 @@ If it works, your environment is fully set up.
 
 ## Troubleshooting
 
-### Canvas won't start / shows errors
+### Canvas won't start / Passenger timeout errors
+
+If you see `A timeout occurred while starting a preloader process` in `docker compose logs web`:
+
+1. **Check memory allocation.** Run `wsl -- free -h` (Windows) or check Docker Desktop resource settings. Canvas needs at least 8 GB available.
+2. **Check the Passenger timeout fix.** Verify `entrypoint-override.sh` exists and is referenced in `docker-compose.override.yml` (step 1.7). You can verify it's applied by running:
+   ```bash
+   docker compose exec web grep start_timeout /usr/src/nginx/nginx.conf
+   ```
+   It should show `300`, not `90`.
+3. **Wait longer.** After `docker compose up -d`, Canvas can take 3–4 minutes to fully boot. Don't refresh the browser repeatedly during this time.
+
+### Canvas starts but shows 500 errors everywhere
+
+Check the Rails log for the actual error:
 
 ```bash
-cd C:\tmp\canvas
-docker compose down
-docker compose up -d
-# Wait 30-60 seconds for all services to initialize
+docker compose exec web bash -c "tail -50 /usr/src/app/log/development.log"
 ```
+
+### WSL 2 becomes unresponsive (Windows)
+
+If Docker or WSL 2 freezes:
+
+```powershell
+wsl --shutdown
+# Close Docker Desktop from the system tray
+# Wait 10 seconds, then reopen Docker Desktop
+```
+
+### Missing config/redis.yml
+
+If Canvas hangs during boot and `docker compose exec web cat /usr/src/app/config/redis.yml` returns "No such file or directory":
+
+```bash
+# Windows:
+copy docker-compose\config\redis.yml config\redis.yml
+
+# Mac/Linux:
+cp docker-compose/config/redis.yml config/redis.yml
+```
+
+Then restart: `docker compose restart web`
 
 ### "Client ID is disabled"
 
 Go to Admin → Developer Keys and toggle the key's State to ON.
 
-### LTI launch shows 500 error
+### LTI launch shows 500 error / `undefined method 'sign' for nil`
 
-Canvas likely doesn't have LTI signing keys. Redo Part 1, step 1.10.
+Canvas can't find its LTI signing keys. This means `config/dynamic_settings.yml` is missing the `store` section. Re-copy the stock template:
+
+```bash
+# Windows:
+copy docker-compose\config\dynamic_settings.yml config\dynamic_settings.yml
+
+# Mac/Linux:
+cp docker-compose/config/dynamic_settings.yml config/dynamic_settings.yml
+```
+
+Then restart Canvas: `docker compose restart web`
 
 ### Canvas can't fetch JWKS from tool
 
@@ -350,6 +467,45 @@ This is expected. The tool's root URL requires an LTI launch from Canvas — you
 
 All source files must use CommonJS (`require`/`module.exports`), not ES modules (`import`/`export default`). If you see `SyntaxError: Unexpected token 'export'`, change `export default` to `module.exports =` and `import X from Y` to `const X = require(Y)`.
 
+### Docker containers show as running but `docker stats` shows dashes
+
+Docker/WSL 2 is in a bad state. Force restart:
+
+```powershell
+wsl --shutdown
+taskkill /F /IM "Docker Desktop.exe"
+# Wait 10 seconds, reopen Docker Desktop
+```
+
+---
+
+## Daily Development Workflow
+
+Once initial setup is complete, your daily workflow is:
+
+```bash
+# Start Canvas (if not already running)
+cd C:\tmp\canvas
+docker compose up -d
+# Wait 3-4 minutes for Canvas to boot
+
+# Start the LTI tool
+cd C:\tmp\LTI-Gators-for-Honor
+npm run dev
+
+# Open Canvas in browser
+# http://localhost:3000
+```
+
+To stop everything:
+
+```bash
+cd C:\tmp\canvas
+docker compose down    # Stops Canvas
+
+# Ctrl+C in the LTI tool terminal
+```
+
 ---
 
 ## Known Issues
@@ -357,3 +513,4 @@ All source files must use CommonJS (`require`/`module.exports`), not ES modules 
 - `/health` endpoint is behind LTI authentication (should be public) — minor, non-blocking
 - `devMode` in app.js is set to `false` — set to `true` temporarily if you need debug logging for LTI issues
 - The tool currently shows a static HTML page on launch — the React wizard UI is the next development milestone
+- Canvas first boot on WSL 2 can take up to 5 minutes — subsequent boots are faster due to caching

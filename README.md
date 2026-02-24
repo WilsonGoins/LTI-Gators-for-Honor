@@ -42,13 +42,7 @@ cd C:\tmp\canvas
 docker compose up -d      # then you can open up http://localhost:3000 after it is up
 ```
 
-**Terminal 2 — MongoDB (in the LTI tool directory):**
-```bash
-cd C:\tmp\LTI-Gators-for-Honor    
-docker compose up -d mongo
-```
-
-**Terminal 3 — LTI Tool:**
+**Terminal 2 — LTI Tool:**
 ```bash
 cd C:\tmp\LTI-Gators-for-Honor
 npm run dev       # this runs on http://localhost:3001, but there is nothing to see at that endpoint
@@ -64,19 +58,15 @@ npm run dev       # this runs on http://localhost:3001, but there is nothing to 
 ### Shutting down
 
 ```bash
-# Stop the LTI tool in Terminal 3:
+# Stop the LTI tool in Terminal 2:
  Ctrl+C
-
-# Stop MongoDB in Terminal 2:
-cd C:\tmp\LTI-Gators-for-Honor
-docker compose down
 
 # Stop Canvas in terminal 1:
 cd C:\tmp\canvas
-docker compose down
+docker compose stop         # or just close your computer. Only run ``docker compose down`` when stopping docker entirely
 ```
 
-Canvas and MongoDB data persist across restarts (stored in Docker volumes). You don't need to re-run database setup or asset compilation again.
+Canvas data persists across restarts (stored in Docker volumes). You don't need to re-run database setup or asset compilation again.
 
 ## Environment Variables
 
