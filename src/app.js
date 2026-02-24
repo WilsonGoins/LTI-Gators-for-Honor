@@ -128,8 +128,9 @@ app.post('/lti/login', (req, res) => {
     authUrl.searchParams.append('login_hint', login_hint);
     authUrl.searchParams.append('state', state);
     authUrl.searchParams.append('nonce', nonce);
-    authUrl.searchParams.append('lti_message_hint', lti_message_hint || '');
-    authUrl.searchParams.append('lti_storage_target', '_parent');
+    if (lti_message_hint) {
+      authUrl.searchParams.append('lti_message_hint', lti_message_hint);
+    }
 
     console.log('Redirecting to Canvas authorize:', authUrl.toString());
     res.redirect(authUrl.toString());
@@ -147,6 +148,10 @@ app.post('/lti/login', (req, res) => {
 app.post('/lti/launch', async (req, res) => {
   try {
     console.log('Launch body:', JSON.stringify(req.body));        // todo: remove
+    
+    if (req.body.error) {
+      throw new Error(`Canvas returned error: ${req.body.error} — ${req.body.error_description}`);
+    }
     const { id_token, state } = req.body;
 
     console.log('\n========== LTI LAUNCH ==========');
