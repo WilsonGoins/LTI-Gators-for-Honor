@@ -53,7 +53,7 @@ app.use((req, res, next) => {
 // ---------------------------------------------------------------------------
 const nonceStore = new Map();
 const sessionStore = new Map(); // sessionToken → LTI context
-let privateKey;
+let _privateKey;
 let publicJwk;
 
 // ---------------------------------------------------------------------------
@@ -72,7 +72,7 @@ async function initializeKeys() {
   jwk.alg = 'RS256';
   jwk.use = 'sig';
 
-  privateKey = privKey;
+  _privateKey = privKey;
   publicJwk = jwk;
   console.log('✅ RSA keys generated for JWKS');
 }
@@ -165,7 +165,6 @@ app.post('/lti/login', (req, res) => {
     const {
       iss,
       login_hint,
-      target_link_uri,
       lti_message_hint,
       client_id,
       lti_deployment_id,
@@ -417,9 +416,9 @@ app.get('/', (req, res) => {
       <body style="font-family: sans-serif; padding: 40px;">
         <h1>🔒 SEB Exam Creator - LTI Tool</h1>
         <p>Status: Running</p>
-        <p>Frontend: <a href="${FRONTEND_URL}">${FRONTEND_URL}</a></p>
-        <p>JWKS: <a href="/keys">/keys</a></p>
-        <p>Health: <a href="/health">/health</a></p>
+        <p>Frontend: <a href='${FRONTEND_URL}'>${FRONTEND_URL}</a></p>
+        <p>JWKS: <a href='/keys'>/keys</a></p>
+        <p>Health: <a href='/health'>/health</a></p>
         <p>This tool must be launched from Canvas via LTI.</p>
       </body>
     </html>
