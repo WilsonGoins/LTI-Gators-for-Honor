@@ -112,12 +112,12 @@ export function QuizCard({ quiz, onConfigure, onViewSettings }: QuizCardProps) {
           )}
 
           {quiz.sebConfigured ? (
-            <Badge variant="info" className="gap-1">
+            <Badge variant="success" className="gap-1">
               <ShieldCheck className="w-3 h-3" />
               SEB Active
             </Badge>
           ) : (
-            <Badge variant="outline" className="gap-1 text-muted-foreground">
+            <Badge variant="destructive" className="gap-1">
               <ShieldAlert className="w-3 h-3" />
               No SEB
             </Badge>

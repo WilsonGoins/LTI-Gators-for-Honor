@@ -313,12 +313,27 @@ app.post('/lti/launch', async (req, res) => {
     // console.log('given_name:', payload.given_name, '| family_name:', payload.family_name);
     // console.log('name:', payload.name, '| picture:', payload.picture);
 
+
+    // Debug: dump full payload so you can see exactly what Canvas sends
+    console.log('\n--- FULL JWT PAYLOAD ---');
+    console.log(JSON.stringify(payload, null, 2));
+    console.log('--- END PAYLOAD ---\n');
+
+
     // Canvas LTI 1.3 uses OIDC standard claims: given_name + family_name
     const userName =
       [payload.given_name, payload.family_name].filter(Boolean).join(' ') ||
       payload.name ||
       custom.user_name_full ||
-      'Unknown';
+      custom.person_name_full ||
+      (payload['https://purl.imsglobal.org/spec/lti/claim/lis'] || {}).person_name_full ||
+      payload.preferred_username ||
+      (payload.sub ? `User ${payload.sub}` : 'Unknown');
+
+    const avatarUrl =
+      payload.picture ||
+      custom.user_image ||
+      null;
 
     const context = {
       courseId: ltiContext.id,
@@ -326,7 +341,7 @@ app.post('/lti/launch', async (req, res) => {
       userName,
       userEmail: payload.email || custom.user_email || 'N/A',
       roles: roles.map((r) => r.split('#').pop()),
-      avatarUrl: payload.picture || null,
+      avatarUrl,
       canvasUrl,
     };
 

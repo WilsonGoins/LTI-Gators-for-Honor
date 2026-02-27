@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Search, Filter, ArrowUpDown } from "lucide-react";
+import { Search, ArrowUpDown } from "lucide-react";
 import { LTIContext, Quiz } from "@/lib/types";
 import { DUMMY_QUIZZES } from "@/lib/dummy-data";
 import { DashboardHeader } from "@/components/dashboard-header";
@@ -10,11 +10,17 @@ import { QuizCard } from "@/components/quiz-card";
 import { SEBSettingsDialog } from "@/components/seb-settings-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { DashboardSkeleton } from "@/components/dashboard-skeleton";
+import {
+  FilterDropdown,
+  DEFAULT_FILTERS,
+  getActiveFilterCount,
+  type FilterState,
+} from "@/components/filter-dropdown";
+import { cn } from "@/lib/utils";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
 type SortKey = "title" | "dueAt" | "sebConfigured";
-type FilterKey = "all" | "configured" | "unconfigured";
 
 export default function DashboardPage() {
   // ── State ──────────────────────────────────────────────────────────────
@@ -25,7 +31,7 @@ export default function DashboardPage() {
 
   const [quizzes] = useState<Quiz[]>(DUMMY_QUIZZES);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterKey, setFilterKey] = useState<FilterKey>("all");
+  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("dueAt");
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -35,12 +41,10 @@ export default function DashboardPage() {
   // ── Fetch LTI context on mount ────────────────────────────────────────
   useEffect(() => {
     async function init() {
-      // Check URL for session token
       const params = new URLSearchParams(window.location.search);
       const token = params.get("token");
 
       if (!token) {
-        // No token → dev mode with mock context
         console.log("⚡ No LTI token found — running in dev mode");
         setDevMode(true);
         setContext({
@@ -53,14 +57,11 @@ export default function DashboardPage() {
           canvasUrl: "https://canvas.ufl.edu",
         });
         setLoading(false);
-
-        // Clean up URL without reload
         window.history.replaceState({}, "", window.location.pathname);
         return;
       }
 
       try {
-        // Store token for future API calls
         sessionStorage.setItem("seb_token", token);
 
         const res = await fetch(`${BACKEND_URL}/api/context`, {
@@ -73,8 +74,6 @@ export default function DashboardPage() {
 
         const data: LTIContext = await res.json();
         setContext(data);
-
-        // Clean token from URL
         window.history.replaceState({}, "", window.location.pathname);
       } catch (err) {
         console.error("Context fetch error:", err);
@@ -101,11 +100,24 @@ export default function DashboardPage() {
       );
     }
 
-    // SEB filter
-    if (filterKey === "configured") {
-      result = result.filter((quiz) => quiz.sebConfigured);
-    } else if (filterKey === "unconfigured") {
-      result = result.filter((quiz) => !quiz.sebConfigured);
+    // SEB status filters (if neither is checked, show all)
+    const hasSebFilter = filters.sebActive || filters.sebNone;
+    if (hasSebFilter) {
+      result = result.filter((quiz) => {
+        if (filters.sebActive && quiz.sebConfigured) return true;
+        if (filters.sebNone && !quiz.sebConfigured) return true;
+        return false;
+      });
+    }
+
+    // Publish status filters (if neither is checked, show all)
+    const hasPubFilter = filters.published || filters.draft;
+    if (hasPubFilter) {
+      result = result.filter((quiz) => {
+        if (filters.published && quiz.published) return true;
+        if (filters.draft && !quiz.published) return true;
+        return false;
+      });
     }
 
     // Sort
@@ -116,7 +128,6 @@ export default function DashboardPage() {
           cmp = a.title.localeCompare(b.title);
           break;
         case "dueAt":
-          // Null dates go to the end
           if (!a.dueAt && !b.dueAt) cmp = 0;
           else if (!a.dueAt) cmp = 1;
           else if (!b.dueAt) cmp = -1;
@@ -130,11 +141,10 @@ export default function DashboardPage() {
     });
 
     return result;
-  }, [quizzes, searchQuery, filterKey, sortKey, sortAsc]);
+  }, [quizzes, searchQuery, filters, sortKey, sortAsc]);
 
   // ── Handlers ──────────────────────────────────────────────────────────
   const handleConfigure = useCallback((quiz: Quiz) => {
-    // TODO: Navigate to configuration wizard page
     console.log("Configure SEB for:", quiz.title);
     alert(`Navigate to SEB configuration wizard for "${quiz.title}"\n\n(This will be implemented as a separate page)`);
   }, []);
@@ -146,7 +156,6 @@ export default function DashboardPage() {
 
   const handleEditSettings = useCallback((quiz: Quiz) => {
     setSettingsOpen(false);
-    // TODO: Navigate to configuration wizard in edit mode
     console.log("Edit SEB settings for:", quiz.title);
     alert(`Navigate to SEB configuration wizard (edit mode) for "${quiz.title}"`);
   }, []);
@@ -162,6 +171,8 @@ export default function DashboardPage() {
     },
     [sortKey]
   );
+
+  const hasActiveFilters = getActiveFilterCount(filters) > 0;
 
   // ── Render ────────────────────────────────────────────────────────────
   if (loading) return <DashboardSkeleton />;
@@ -209,7 +220,7 @@ export default function DashboardPage() {
         {/* Stats overview */}
         <StatsBar quizzes={quizzes} />
 
-        {/* Toolbar: search + filters + sort */}
+        {/* Toolbar: search + filter dropdown + sort */}
         <div className="mt-8 mb-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
           {/* Search */}
           <div className="relative flex-1 w-full sm:max-w-xs">
@@ -223,30 +234,8 @@ export default function DashboardPage() {
             />
           </div>
 
-          {/* Filter pills */}
-          <div className="flex items-center gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-muted-foreground mr-1" />
-            {(
-              [
-                ["all", "All"],
-                ["configured", "SEB Active"],
-                ["unconfigured", "Needs Setup"],
-              ] as [FilterKey, string][]
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => setFilterKey(key)}
-                className={cn(
-                  "px-3 py-1 rounded-full text-xs font-medium transition-colors",
-                  filterKey === key
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {/* Filter dropdown */}
+          <FilterDropdown filters={filters} onChange={setFilters} />
 
           {/* Sort */}
           <div className="flex items-center gap-1.5 sm:ml-auto">
@@ -294,11 +283,11 @@ export default function DashboardPage() {
         )}
 
         {/* Results count */}
-        {searchQuery || filterKey !== "all" ? (
+        {(searchQuery || hasActiveFilters) && (
           <p className="text-xs text-muted-foreground mt-4 text-center">
             Showing {filteredQuizzes.length} of {quizzes.length} quizzes
           </p>
-        ) : null}
+        )}
       </main>
 
       {/* Settings dialog */}
