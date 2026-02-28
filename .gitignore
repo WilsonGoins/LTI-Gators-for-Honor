@@ -4,3 +4,5 @@ coverage/
 dist/
 *.log
 .DS_Store
+frontend/.next/
+frontend/node_modules/
