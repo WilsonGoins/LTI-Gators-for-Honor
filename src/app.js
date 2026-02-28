@@ -377,7 +377,7 @@ app.post('/lti/launch', async (req, res) => {
     redirectUrl.searchParams.set('token', sessionToken);
 
     // console.log(`✅ Redirecting to frontend: ${redirectUrl.toString()}`);
-    console.log(`✅ Redirecting to frontend...`);
+    console.log('✅ Redirecting to frontend...');
     return res.redirect(redirectUrl.toString());
   } catch (error) {
     console.error('Launch error:', error);
