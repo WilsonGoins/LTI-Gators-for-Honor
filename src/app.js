@@ -53,14 +53,13 @@ app.use((req, res, next) => {
 // ---------------------------------------------------------------------------
 const nonceStore = new Map();
 const sessionStore = new Map(); // sessionToken → LTI context
-let _privateKey;
 let publicJwk;
 
 // ---------------------------------------------------------------------------
 // RSA key generation — tool's signing keys for JWKS
 // ---------------------------------------------------------------------------
 async function initializeKeys() {
-  const { publicKey, privateKey: privKey } = crypto.generateKeyPairSync('rsa', {
+  const { publicKey } = crypto.generateKeyPairSync('rsa', {
     modulusLength: 2048,
     publicKeyEncoding: { type: 'spki', format: 'pem' },
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
@@ -72,7 +71,6 @@ async function initializeKeys() {
   jwk.alg = 'RS256';
   jwk.use = 'sig';
 
-  _privateKey = privKey;
   publicJwk = jwk;
   console.log('✅ RSA keys generated for JWKS');
 }
@@ -385,7 +383,7 @@ app.post('/lti/launch', async (req, res) => {
     console.error('Launch error:', error);
     res.status(500).send(`
       <html>
-        <body style="font-family: sans-serif; padding: 40px;">
+        <body style='font-family: sans-serif; padding: 40px;'>
           <h1>❌ LTI Launch Error</h1>
           <p><strong>Error:</strong> ${error.message}</p>
           <p>Check the tool server console for details.</p>
