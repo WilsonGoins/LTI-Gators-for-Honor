@@ -358,7 +358,7 @@ app.post('/lti/launch', async (req, res) => {
     if (!isInstructor) {
       return res.status(403).send(`
         <html>
-          <body style="font-family: sans-serif; padding: 40px; text-align: center;">
+          <body style='font-family: sans-serif; padding: 40px; text-align: center;'>
             <h1>Access Denied</h1>
             <p>This tool is only available to instructors and administrators.</p>
             <p>Your roles: ${context.roles.join(', ')}</p>
@@ -411,7 +411,7 @@ app.use('/lti-info', ltiRoutes);
 app.get('/', (req, res) => {
   res.send(`
     <html>
-      <body style="font-family: sans-serif; padding: 40px;">
+      <body style='font-family: sans-serif; padding: 40px;'>
         <h1>🔒 SEB Exam Creator - LTI Tool</h1>
         <p>Status: Running</p>
         <p>Frontend: <a href='${FRONTEND_URL}'>${FRONTEND_URL}</a></p>
