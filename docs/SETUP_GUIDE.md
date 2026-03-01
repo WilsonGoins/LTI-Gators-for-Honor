@@ -323,22 +323,34 @@ Verify: `http://localhost:3001/keys` should return a JSON object with a `keys` a
 4. Click **+ Developer Key** → **+ LTI Key**
 5. Set **Method** to **Manual Entry**
 6. Fill in the form:
-
-| Field | Value |
-|-------|-------|
-| Key Name | `SEB Exam Creator` |
-| Redirect URIs | `http://localhost:3001/lti/launch` |
-| Title | `SEB Exam Creator` |
-| Target Link URI | `http://localhost:3001/lti/launch` |
-| OpenID Connect Initiation URL | `http://localhost:3001/lti/login` |
-| JWK Method | Public JWK URL |
-| Public JWK URL | `http://host.docker.internal:3001/keys` |
-
+  - Key Name: Safe Exam Browser
+  - Owner Email: {Your Email}
+  - Redirect URIs: http://localhost:3001/lti/launch (or wherever the server for Gators-for-Honor is running from)
+  Configure Method: Paste JSON (then paste this below)
+  - {
+      "title": "Safe Exam Browser",
+      "description": "Create SEB-configured Canvas quizzes",
+      "target_link_uri": "http://localhost:3001/lti/launch",
+      "oidc_initiation_url": "http://localhost:3001/lti/login",
+      "oidc_initiation_urls": {},
+      "public_jwk_url": "http://host.docker.internal:3001/keys",
+      "public_jwk": null,
+      "scopes": [],
+      "extensions": [
+        {
+          "platform": "canvas.instructure.com",
+          "settings": {
+            "placements": [
+              {
+                "text": "Safe Exam Browser",
+                "placement": "course_navigation"
+              }
+            ]
+          }
+        }
+      ]
+    }
 > **Why `host.docker.internal` for the JWK URL?** Canvas runs inside Docker. When it needs to fetch your tool's public keys (server-to-server), `localhost` points to the container itself, not your host machine. `host.docker.internal` is Docker Desktop's way of reaching the host. This only applies to the JWK URL — all other URLs are browser-facing and use `localhost`, since the user's browser can reach both `localhost:3000` (Canvas) and `localhost:3001` (the tool) directly.
-
-7. Enable all **LTI Advantage Services** checkboxes
-8. Under **Additional Settings**, set **Privacy Level** to **Public**
-9. Under **Placements**, add **Course Navigation** with Target Link URI: `http://localhost:3001/lti/launch`
 10. Click **Save**
 
 ### 3.2 Enable the Key
