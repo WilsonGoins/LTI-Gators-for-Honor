@@ -276,14 +276,6 @@ copy .env.example .env
 cp .env.example .env
 ```
 
-Generate a secret key for the LTI library. This is used by ltijs to sign session tokens and must be a strong random value:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-Open `.env` in a text editor and set:
-
 ```
 LTI_PLATFORM_URL=https://canvas.instructure.com
 LTI_CLIENT_ID=<leave blank for now — fill in after registering in Canvas>

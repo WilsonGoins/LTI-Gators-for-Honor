@@ -48,7 +48,7 @@ UF Canvas requires all LTI tools to use HTTPS. Options:
 
 ### 4. Cookie Configuration
 
-In `src/app.js`, change the ltijs cookie settings for production:
+In `src/app.js`, change the cookie settings for production:
 
 ```javascript
 cookies: {

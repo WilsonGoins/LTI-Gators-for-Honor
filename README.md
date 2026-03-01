@@ -14,23 +14,10 @@ Instructors at UF who want to use Safe Exam Browser (SEB) for proctored exams in
 
 The Canvas SEB Quiz Creator is an LTI 1.3 application that provides a unified wizard interface for creating Canvas quizzes pre-configured for SEB proctoring. It handles SEB configuration file generation, Config Key computation, and quiz creation through the Canvas API, all from within Canvas itself.
 
-## Architecture
+If this is your first time, see \docs\SETUP_GUIDE.md
 
-```
-┌─────────────────┐     LTI 1.3 Launch      ┌──────────────────────┐
-│   Canvas LMS    │ ──────────────────────►  │  SEB Exam Creator    │
-│  (Docker local) │ ◄──────────────────────  │  (Node.js + ltijs)   │
-│  localhost:3000  │     Quiz API calls       │  localhost:3001       │
-└─────────────────┘                          └──────────┬───────────┘
-                                                        │
-                                              ┌─────────▼─────────┐
-                                              │     MongoDB       │
-                                              │  (Docker container)│
-                                              │  localhost:27017   │
-                                              └───────────────────┘
-```
-
-**Tech stack:** Node.js, Express (via ltijs), MongoDB, plist (XML generation), crypto (SHA-256 hashing)
+## Tech Stack
+The frontend is built with Next.js (React) and runs on :3002, while the Node.js/Express backend handles LTI 1.3 launch logic on :3001. LTI integration is managed by OIDC. For local development, Canvas LMS runs in Docker on :3000. Canvas REST API integration for quiz creation and management is currently in progress.
 
 ## Daily Development Workflow
 
@@ -48,20 +35,29 @@ cd C:\tmp\LTI-Gators-for-Honor
 npm run dev       # this runs on http://localhost:3001, but there is nothing to see at that endpoint
 ```
 
+**Terminal 3 — LTI Tool Frontend:**
+```bash
+cd C:\tmp\LTI-Gators-for-Honor\frontend
+npm run dev       # this runs on http://localhost:3002, you can open it in your browser and see how it looks with mock data
+```
+
 ### Testing the LTI launch
 
 1. Go to `http://localhost:3000` and log into Canvas
 2. Navigate to your test course
-3. Click "SEB Exam Creator" in the left sidebar
+3. Click "Safe Exam Browser" in the left sidebar
 4. You should see the LTI Launch Successful page
 
 ### Shutting down
 
 ```bash
+# Stop the LTI frontend in Terminal 3:
+ Ctrl+C
+
 # Stop the LTI tool in Terminal 2:
  Ctrl+C
 
-# Stop Canvas in terminal 1:
+# Stop Canvas in Terminal 1:
 cd C:\tmp\canvas
 docker compose stop         # or just close your computer. Only run ``docker compose down`` when stopping docker entirely
 ```
@@ -70,7 +66,7 @@ Canvas data persists across restarts (stored in Docker volumes). You don't need 
 
 ## Environment Variables
 
-See `.env.example` for the full template. Key variables:
+See `.env.example` for the full template.
 
 ## References
 
@@ -79,5 +75,4 @@ See `.env.example` for the full template. Key variables:
 - [SEB Developer Docs](https://safeexambrowser.org/developer/overview.html)
 - [SEB Config Key Spec](https://safeexambrowser.org/developer/seb-config-key.html)
 - [SEB File Format Spec](https://safeexambrowser.org/developer/seb-file-format.html)
-- [ltijs Documentation](https://cvmcosta.me/ltijs/)
 - [LTI 1.3 Specification](https://www.imsglobal.org/spec/lti/v1p3/)
