@@ -138,12 +138,6 @@ export function QuizCard({ quiz, onConfigure, onViewSettings }: QuizCardProps) {
               day: "numeric",
             })}{" "}
             · {quiz.sebSettings.securityLevel.replace("_", " ")} security
-            {quiz.sebSettings.accessCode && (
-              <>
-                {" "}
-                · Code: <code className="font-mono text-foreground">{quiz.sebSettings.accessCode}</code>
-              </>
-            )}
           </p>
         ) : (
           <p className="text-xs text-muted-foreground">

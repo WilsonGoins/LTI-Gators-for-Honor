@@ -4,8 +4,6 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { Search, ArrowUpDown } from "lucide-react";
 import { LTIContext, Quiz } from "@/lib/types";
 import { DUMMY_QUIZZES } from "@/lib/dummy-data";
-import { DashboardHeader } from "@/components/dashboard-header";
-import { StatsBar } from "@/components/stats-bar";
 import { QuizCard } from "@/components/quiz-card";
 import { SEBSettingsDialog } from "@/components/seb-settings-dialog";
 import { EmptyState } from "@/components/empty-state";
@@ -198,8 +196,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <DashboardHeader context={context} />
-
       <main className="mx-auto max-w-7xl px-6 py-8">
         {/* Dev mode banner */}
         {devMode && (
@@ -216,9 +212,6 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
-
-        {/* Stats overview */}
-        <StatsBar quizzes={quizzes} />
 
         {/* Toolbar: search + filter dropdown + sort */}
         <div className="mt-8 mb-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
