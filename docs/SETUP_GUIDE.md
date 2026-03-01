@@ -288,8 +288,6 @@ SEB_DEFAULT_QUIT_PASSWORD=<intentionally leave this blank>
 SEB_DEFAULT_ALLOWED_DOMAIN=localhost:3000
 ```
 
-> **CANVAS_API_TOKEN** is reserved for future use when the backend needs to make Canvas REST API calls server-side (e.g., creating quizzes on behalf of an admin). Canvas API integration is not yet implemented — leave this blank for now.
-
 ### 2.4 Start the Backend Server
 
 Open a terminal in the project root and run:
@@ -367,7 +365,16 @@ Back on the Developer Keys list, find your new key. Toggle the **State** switch 
 
 The Client ID is the number shown in the Details column (e.g., `10000000000007`). Copy it.
 
-### 3.4 Update .env
+### 3.4 Create the Acess Token
+
+This is for API calls
+1. Go to **Account** → **Settings**
+2. Scroll down and click **+ New Access Token**
+3. Put "Safe Exam Browser Dev" for the name and then press **Generate Token**
+4. Copy down the token **IMMEDIATELY**, you will not be able to see it again.
+5. Update your the **CANVAS_API_TOKEN** attribute of your **.env** file with this token
+
+### 3.5 Update .env
 
 Open your `.env` file and set:
 
@@ -379,7 +386,7 @@ LTI_CLIENT_ID=10000000000007
 
 Restart the backend (Ctrl+C in the backend terminal, then `npm run dev`). The frontend does not need to be restarted.
 
-### 3.5 Install in a Course
+### 3.6 Install in a Course
 
 1. In Canvas, go to your admin account
 2. Go to the course → **Settings** → **Apps** tab
@@ -388,7 +395,7 @@ Restart the backend (Ctrl+C in the backend terminal, then `npm run dev`). The fr
 5. Paste the Client ID → **Submit** → **Install**
 > This will add the LTI extension for all courses created under that account
 
-### 3.6 Test the Launch
+### 3.7 Test the Launch
 
 1. Navigate to your course
 2. Click **Safe Exam Browser** in the left sidebar

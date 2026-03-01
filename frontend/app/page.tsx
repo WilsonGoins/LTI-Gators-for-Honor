@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Search, ArrowUpDown } from "lucide-react";
-import { LTIContext, Quiz } from "@/lib/types";
+import { LTIContext, CanvasClassicQuiz, CanvasNewQuiz, Quiz } from "@/lib/types";
 import { DUMMY_QUIZZES } from "@/lib/dummy-data";
 import { QuizCard } from "@/components/quiz-card";
 import { SEBSettingsDialog } from "@/components/seb-settings-dialog";
@@ -20,6 +20,114 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:300
 
 type SortKey = "title" | "dueAt" | "sebConfigured";
 
+
+// this is a normalizer function that converts a Classic Quiz from Canvas API to our internal quiz structure
+function normalizeClassicQuiz(raw: CanvasClassicQuiz, courseId: string): Quiz {
+  return {
+    // primary keys for db
+    id: String(raw.id),     // your existing Quiz.id
+    courseId,      // needed for composite key in db
+
+    // other fields
+    title: raw.title,
+    description: raw.description ?? null,
+    dueAt: raw.due_at ?? null,
+    lockAt: raw.lock_at ?? null,
+    unlockAt: raw.unlock_at ?? null,
+    published: raw.published ?? false,
+    pointsPossible: raw.points_possible ?? null,
+    questionCount: raw.question_count ?? 0,
+    timeLimitSeconds: raw.time_limit != null ? raw.time_limit * 60 : null,  // canvas gives minutes, we store seconds
+
+    // settings for security page (might not use all of these)
+    hasAccessCode: Boolean(raw.access_code),      // truthy means that the code was configured
+    allowedAttempts: raw.allowed_attempts ?? 1,
+    shuffleQuestions: raw.shuffle_questions ?? false,
+    shuffleAnswers: raw.shuffle_answers ?? false,
+    oneAtATime: raw.one_question_at_a_time ?? false,
+    allowBacktracking: !(raw.cant_go_back ?? false),
+
+    // metadata 
+    quizType: "classic" as const,
+    assignmentGroupId: raw.assignment_group_id
+      ? String(raw.assignment_group_id)
+      : null,
+
+    // default to false for now #TODO
+    sebConfigured: false,
+    sebConfiguredDate: "Feb 31",
+  };
+}
+
+// this is a normalizer function that converts a New Quiz from Canvas API to our internal quiz structure
+function normalizeNewQuiz(raw: CanvasNewQuiz, courseId: string): Quiz {
+  const s = raw.quiz_settings ?? {};
+  return {
+    // primary keys for db
+    id: String(raw.id),
+    courseId,
+
+    // other fields
+    title: raw.title,
+    description: raw.instructions ?? null,           
+    dueAt: raw.due_at ?? null,
+    lockAt: raw.lock_at ?? null,
+    unlockAt: raw.unlock_at ?? null,
+    published: raw.published ?? false,
+    pointsPossible: raw.points_possible ?? null,
+    questionCount: s.question_count ?? 0,            
+    timeLimitSeconds: s.has_time_limit               // already in seconds 
+      ? (s.session_time_limit_in_seconds ?? null)
+      : null,
+
+    // settings for security page (might not use all of these)
+    hasAccessCode: Boolean(s.student_access_code),   
+    allowedAttempts: s.allowed_attempts ?? 1,
+    shuffleQuestions: s.shuffle_questions ?? false,
+    shuffleAnswers: s.shuffle_answers ?? false,
+    oneAtATime: s.one_at_a_time_type === "question",     // string enum instead of boolean
+    allowBacktracking: s.allow_backtracking ?? true,  
+
+    // metadata
+    quizType: "new" as const,
+    assignmentGroupId: raw.assignment_group_id
+      ? String(raw.assignment_group_id)
+      : null,
+
+    // dummy values until we fetch from db #TODO
+    sebConfigured: false,
+    sebConfiguredDate: "Feb 31",
+  };
+}
+
+// Fetch quizzes from Canvas via our backend, normalize them, and return as Quiz[]
+async function fetchQuizzesFromCanvas(
+  courseId: string,
+  token: string
+): Promise<Quiz[]> {
+  const res = await fetch(`${BACKEND_URL}/api/courses/${courseId}/quizzes`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch quizzes (${res.status})`);
+  }
+
+  // The backend returns both quiz types separately so we can normalize here.
+  const data: { classic: CanvasClassicQuiz[]; new: CanvasNewQuiz[] } =
+    await res.json();
+
+  const classicQuizzes = (data.classic ?? []).map((q) =>
+    normalizeClassicQuiz(q, courseId)
+  );
+  const newQuizzes = (data.new ?? []).map((q) =>
+    normalizeNewQuiz(q, courseId)
+  );
+
+  return [...classicQuizzes, ...newQuizzes];
+}
+
+
 export default function DashboardPage() {
   // ── State ──────────────────────────────────────────────────────────────
   const [context, setContext] = useState<LTIContext | null>(null);
@@ -27,7 +135,9 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [devMode, setDevMode] = useState(false);
 
-  const [quizzes] = useState<Quiz[]>(DUMMY_QUIZZES);
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [quizzesLoading, setQuizzesLoading] = useState(false);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("dueAt");
@@ -54,6 +164,7 @@ export default function DashboardPage() {
           avatarUrl: null,
           canvasUrl: "https://canvas.ufl.edu",
         });
+        setQuizzes(DUMMY_QUIZZES);
         setLoading(false);
         window.history.replaceState({}, "", window.location.pathname);
         return;
@@ -73,6 +184,24 @@ export default function DashboardPage() {
         const data: LTIContext = await res.json();
         setContext(data);
         window.history.replaceState({}, "", window.location.pathname);
+
+        setQuizzesLoading(true);
+        try {
+          const canvasQuizzes = await fetchQuizzesFromCanvas(
+            data.courseId,
+            token
+          );
+          setQuizzes(canvasQuizzes);
+        } catch (quizErr) {
+          console.error("Quiz fetch error:", quizErr);
+          setError(
+            quizErr instanceof Error
+              ? quizErr.message
+              : "Failed to load quizzes from Canvas"
+          );
+        } finally {
+          setQuizzesLoading(false);
+        }
       } catch (err) {
         console.error("Context fetch error:", err);
         setError(
@@ -132,7 +261,8 @@ export default function DashboardPage() {
           else cmp = new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
           break;
         case "sebConfigured":
-          cmp = (a.sebConfigured ? 1 : 0) - (b.sebConfigured ? 1 : 0);
+          cmp =
+            (a.sebConfigured ? 1 : 0) - (b.sebConfigured ? 1 : 0);
           break;
       }
       return sortAsc ? cmp : -cmp;
@@ -173,7 +303,7 @@ export default function DashboardPage() {
   const hasActiveFilters = getActiveFilterCount(filters) > 0;
 
   // ── Render ────────────────────────────────────────────────────────────
-  if (loading) return <DashboardSkeleton />;
+  if (loading || quizzesLoading) return <DashboardSkeleton />;
 
   if (error) {
     return (
