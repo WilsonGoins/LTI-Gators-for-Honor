@@ -9,6 +9,9 @@ export interface LTIContext {
   canvasUrl: string;
 }
 
+// sort keys used on the dashboard quiz list
+export type SortKey = "title" | "dueAt" | "sebConfigured";
+
 // to store both types of quizzes
 export interface Quiz {
   // composite primary key (quiz_id + course_id)
