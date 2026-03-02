@@ -2,7 +2,7 @@
 
 **Canvas SEB Quiz Creator in Local Development Environment**
 
-This guide walks you through setting up the complete development environment from scratch. By the end, you'll have Canvas LMS running locally in Docker and the LTI tool connected to it.
+This guide walks you through setting up the complete development environment from scratch. By the end, you'll have Canvas LMS running locally in Docker and the LTI tool connected to it. This assumes you plan to run Canvas on a local server (:3000), the LTI app backend locally (:3001), and the Next.JS frontend locally (:3002) as well.
 
 **Time estimate:** 1–2 hours (most of it is Canvas asset compilation)
 
@@ -12,8 +12,8 @@ This guide walks you through setting up the complete development environment fro
 
 | Software | Version | Purpose |
 |----------|---------|---------|
-| [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Latest | Runs Canvas LMS and MongoDB |
-| [Node.js](https://nodejs.org/) | 18+ (recommend 20) | Runs the LTI tool |
+| [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Latest | Runs Canvas LMS |
+| [Node.js](https://nodejs.org/) | 18+ (recommend 20) | Runs the LTI tool and frontend |
 | [Git](https://git-scm.com/) | Latest | Version control |
 | RAM | 12 GB minimum | Docker needs ~8–10 GB for Canvas |
 
@@ -42,7 +42,7 @@ Then restart Docker Desktop.
 
 **Mac/Linux:**
 
-Go to Docker Desktop → Settings → Resources → Advanced. Set Memory to at least **8 GB** (10 GB recommended).
+Go to Docker Desktop → Settings → Resources → Advanced. Ensure memory is set to at least **8 GB** (10 GB recommended).
 
 ---
 
@@ -74,7 +74,7 @@ for file in database.yml redis.yml domain.yml security.yml dynamic_settings.yml;
 done
 ```
 
-> **CRITICAL:** Do not skip `redis.yml` — Canvas will hang on startup without it. Do not skip `dynamic_settings.yml` — LTI 1.3 will not work without the signing keys it contains.
+> **CRITICAL:** Do not skip `redis.yml`, because Canvas will hang on startup without it. Do not skip `dynamic_settings.yml` or LTI 1.3 will not work without the signing keys it contains.
 
 ### 1.3 Configure database.yml
 
@@ -170,7 +170,7 @@ This takes several minutes. Wait for it to complete.
 docker compose run --rm web bundle exec rake db:create db:initial_setup
 ```
 
-You'll be prompted to create an admin account. **Write down the email and password** — you'll need them to log into Canvas.
+You'll be prompted to create an admin account. **Write down the email and password**, you'll need them to log into Canvas.
 
 ### 1.10 Install JavaScript Dependencies
 
@@ -192,7 +192,7 @@ docker compose run --rm web bash -c "yarn cache clean && yarn install --force"
 docker compose run --rm web bundle exec rake canvas:compile_assets_dev
 ```
 
-**This takes 15–30 minutes.** Let it run — don't Ctrl+C. When finished, you'll get your command prompt back.
+**This takes 15–30 minutes.** Let it run, don't Ctrl+C. When finished, you'll get your command prompt back.
 
 ### 1.12 Verify dynamic_settings.yml Has LTI Signing Keys (CRITICAL)
 
@@ -234,7 +234,7 @@ You can monitor startup progress with:
 docker compose logs -f web
 ```
 
-Look for `Passenger core online` followed by successful HTTP responses. If you see `A timeout occurred while starting a preloader process`, the Passenger timeout fix from step 1.7 is not applied — revisit that step.
+Look for `Passenger core online` followed by successful HTTP responses. If you see `A timeout occurred while starting a preloader process`, the Passenger timeout fix from step 1.7 is not applied, so revisit that step.
 
 Open `http://localhost:3000` in your browser. Log in with the admin credentials you created in step 1.9.
 
@@ -266,13 +266,7 @@ cd LTI-Gators-for-Honor
 npm install
 ```
 
-### 2.3 Start MongoDB
-
-```bash
-docker compose up -d mongo
-```
-
-### 2.4 Configure Environment
+### 2.3 Configure Environment
 
 ```bash
 # Windows:
@@ -282,34 +276,46 @@ copy .env.example .env
 cp .env.example .env
 ```
 
-Generate a secret key:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
-
-Open `.env` in a text editor and set:
-
-```
-LTI_KEY=<paste the hex string you just generated>
-LTI_PLATFORM_URL=http://localhost:3000
-LTI_AUTHENTICATION_ENDPOINT=http://localhost:3000/api/lti/authorize_redirect
-LTI_ACCESS_TOKEN_ENDPOINT=http://localhost:3000/login/oauth2/token
-LTI_KEYSET_ENDPOINT=http://localhost:3000/api/lti/security/jwks
-MONGODB_URI=mongodb://localhost:27017/canvas-seb-lti
+LTI_PLATFORM_URL=https://canvas.instructure.com
+LTI_CLIENT_ID=<leave blank for now — fill in after registering in Canvas>
+CANVAS_URL=http://localhost:3000
 TOOL_URL=http://localhost:3001
 TOOL_PORT=3001
+CANVAS_API_URL=http://localhost:3000/api/v1
+CANVAS_API_TOKEN=<leave blank — reserved for future server-side API calls>
+SEB_DEFAULT_QUIT_PASSWORD=<intentionally leave this blank>
+SEB_DEFAULT_ALLOWED_DOMAIN=localhost:3000
 ```
 
-Leave `LTI_CLIENT_ID` blank for now — you'll fill it in after registering in Canvas.
+> **CANVAS_API_TOKEN** is reserved for future use when the backend needs to make Canvas REST API calls server-side (e.g., creating quizzes on behalf of an admin). Canvas API integration is not yet implemented — leave this blank for now.
 
-### 2.5 Start the Tool
+### 2.4 Start the Backend Server
+
+Open a terminal in the project root and run:
 
 ```bash
 npm run dev
 ```
 
-Verify: `http://localhost:3001/keys` should return a JSON object with a `keys` array.
+This starts the LTI backend on port 3001. Leave this terminal running.
+
+Verify it's working: `http://localhost:3001/keys` should return a JSON object with a `keys` array.
+
+### 2.5 Start the Frontend Server
+
+Open a **second terminal** in the project root and run:
+
+```bash
+cd frontend    # or wherever the Next.js app lives within the repo
+npm run dev
+```
+
+This starts the Next.js frontend on port 3002. Leave this terminal running as well.
+
+Verify it's working: `http://localhost:3002` should load the frontend UI.
+
+> **You need both terminals running simultaneously.** The backend (`:3001`) handles LTI launches and API logic. The frontend (`:3002`) serves the React UI. Stopping either will break the application.
 
 ---
 
@@ -323,22 +329,34 @@ Verify: `http://localhost:3001/keys` should return a JSON object with a `keys` a
 4. Click **+ Developer Key** → **+ LTI Key**
 5. Set **Method** to **Manual Entry**
 6. Fill in the form:
-
-| Field | Value |
-|-------|-------|
-| Key Name | `SEB Exam Creator` |
-| Redirect URIs | `http://localhost:3001/lti/launch` |
-| Title | `SEB Exam Creator` |
-| Target Link URI | `http://localhost:3001/lti/launch` |
-| OpenID Connect Initiation URL | `http://localhost:3001/lti/login` |
-| JWK Method | Public JWK URL |
-| Public JWK URL | `http://host.docker.internal:3001/keys` |
-
+  - Key Name: Safe Exam Browser
+  - Owner Email: {Your Email}
+  - Redirect URIs: http://localhost:3001/lti/launch (or wherever the server for Gators-for-Honor is running from)
+  Configure Method: Paste JSON (then paste this below)
+  - {
+      "title": "Safe Exam Browser",
+      "description": "Create SEB-configured Canvas quizzes",
+      "target_link_uri": "http://localhost:3001/lti/launch",
+      "oidc_initiation_url": "http://localhost:3001/lti/login",
+      "oidc_initiation_urls": {},
+      "public_jwk_url": "http://host.docker.internal:3001/keys",
+      "public_jwk": null,
+      "scopes": [],
+      "extensions": [
+        {
+          "platform": "canvas.instructure.com",
+          "settings": {
+            "placements": [
+              {
+                "text": "Safe Exam Browser",
+                "placement": "course_navigation"
+              }
+            ]
+          }
+        }
+      ]
+    }
 > **Why `host.docker.internal` for the JWK URL?** Canvas runs inside Docker. When it needs to fetch your tool's public keys (server-to-server), `localhost` points to the container itself, not your host machine. `host.docker.internal` is Docker Desktop's way of reaching the host. This only applies to the JWK URL — all other URLs are browser-facing and use `localhost`, since the user's browser can reach both `localhost:3000` (Canvas) and `localhost:3001` (the tool) directly.
-
-7. Enable all **LTI Advantage Services** checkboxes
-8. Under **Additional Settings**, set **Privacy Level** to **Public**
-9. Under **Placements**, add **Course Navigation** with Target Link URI: `http://localhost:3001/lti/launch`
 10. Click **Save**
 
 ### 3.2 Enable the Key
@@ -359,21 +377,22 @@ LTI_CLIENT_ID=10000000000007
 
 (Use whatever number you actually copied.)
 
-Restart the tool (Ctrl+C, then `npm run dev`).
+Restart the backend (Ctrl+C in the backend terminal, then `npm run dev`). The frontend does not need to be restarted.
 
 ### 3.5 Install in a Course
 
-1. In Canvas, create a course (or use an existing one)
+1. In Canvas, go to your admin account
 2. Go to the course → **Settings** → **Apps** tab
 3. Click **View App Configurations** → **+ App**
 4. Set Configuration Type to **By Client ID**
 5. Paste the Client ID → **Submit** → **Install**
+> This will add the LTI extension for all courses created under that account
 
 ### 3.6 Test the Launch
 
 1. Navigate to your course
-2. Click **SEB Exam Creator** in the left sidebar
-3. You should see the "LTI Launch Successful" page showing your user info and course context
+2. Click **Safe Exam Browser** in the left sidebar
+3. You should see the "LTI Launch Successful" page showing your created quizzes
 
 If it works, your environment is fully set up.
 
@@ -481,29 +500,36 @@ taskkill /F /IM "Docker Desktop.exe"
 
 ## Daily Development Workflow
 
-Once initial setup is complete, your daily workflow is:
+Once initial setup is complete, your daily workflow requires **three things running**: Canvas (Docker), the backend, and the frontend.
 
 ```bash
-# Start Canvas (if not already running)
+# Terminal 1 — Start Canvas (if not already running)
 cd C:\tmp\canvas
 docker compose up -d
 # Wait 3-4 minutes for Canvas to boot
 
-# Start the LTI tool
+# Terminal 2 — Start the LTI backend
 cd C:\tmp\LTI-Gators-for-Honor
 npm run dev
+# Runs on http://localhost:3001
 
-# Open Canvas in browser
-# http://localhost:3000
+# Terminal 3 — Start the Next.js frontend
+cd C:\tmp\LTI-Gators-for-Honor/frontend   #
+npm run dev
+# Runs on http://localhost:3002
+
+# Then open Canvas in browser: http://localhost:3000
 ```
 
 To stop everything:
 
 ```bash
+# Stop Canvas
 cd C:\tmp\canvas
-docker compose down    # Stops Canvas
+docker compose down
 
-# Ctrl+C in the LTI tool terminal
+# Stop the backend: Ctrl+C in Terminal 2
+# Stop the frontend: Ctrl+C in Terminal 3
 ```
 
 ---
@@ -512,5 +538,5 @@ docker compose down    # Stops Canvas
 
 - `/health` endpoint is behind LTI authentication (should be public) — minor, non-blocking
 - `devMode` in app.js is set to `false` — set to `true` temporarily if you need debug logging for LTI issues
-- The tool currently shows a static HTML page on launch — the React wizard UI is the next development milestone
+- Canvas API integration is not yet implemented — `CANVAS_API_TOKEN` in `.env` is a placeholder for when this is built out
 - Canvas first boot on WSL 2 can take up to 5 minutes — subsequent boots are faster due to caching
