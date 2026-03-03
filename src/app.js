@@ -300,9 +300,9 @@ app.post('/lti/launch', async (req, res) => {
     const numericCourseId = custom.canvas_course_id || (returnUrlMatch && returnUrlMatch[1]);
 
     // Debug: dump full payload so you can see exactly what Canvas sends
-    console.log('\n--- FULL JWT PAYLOAD ---');
-    console.log(JSON.stringify(payload, null, 2));
-    console.log('--- END PAYLOAD ---\n');
+    // console.log('\n--- FULL JWT PAYLOAD ---');
+    // console.log(JSON.stringify(payload, null, 2));
+    // console.log('--- END PAYLOAD ---\n');
 
 
     // Canvas LTI 1.3 uses OIDC standard claims: given_name + family_name

@@ -17,6 +17,8 @@ This guide walks you through setting up the complete development environment fro
 | [Git](https://git-scm.com/) | Latest | Version control |
 | RAM | 12 GB minimum | Docker needs ~8–10 GB for Canvas |
 
+You will also need a [Neon](https://neon.tech) account for the PostgreSQL database (free tier is sufficient for development).
+
 ### Docker Desktop Memory Configuration
 
 Canvas LMS is very resource-intensive. You **must** allocate sufficient memory or Canvas will fail to start with Passenger timeout errors.
@@ -266,7 +268,43 @@ cd LTI-Gators-for-Honor
 npm install
 ```
 
-### 2.3 Configure Environment
+### 2.3 Set up the Neon Database
+
+The application stores quiz metadata and SEB configurations in a PostgreSQL database hosted on Neon.
+
+1. Go to [neon.tech](https://neon.tech) and create a free account
+2. Create a new project (any name, e.g., "seb-quiz-creator")
+3. Select the **US East** region (or wherever is closest to you)
+4. Once the project is created, go to the **Dashboard** and find your connection strings
+
+You need two connection strings from Neon:
+- **Pooled** connection string — has `-pooler` in the hostname. Used for regular queries.
+- **Unpooled** (direct) connection string — no `-pooler` in the hostname. Used for transactions.
+
+Both are available on the Neon dashboard under "Connection Details." Toggle the "Pooled connection" switch to see each version.
+
+### 2.4 Initialize the Database Schema
+
+The schema file creates three tables (`quizzes`, `seb_settings`, `seb_config_files`) and their triggers.
+
+**Option A — Neon SQL Editor (easiest):**
+1. In the Neon dashboard, click **SQL Editor** in the left sidebar
+2. Open `docs/db_initial_schema.sql` from the project, copy its entire contents
+3. Paste into the SQL Editor and click **Run**
+
+**Option B — From terminal (if you have psql installed):**
+```bash
+psql "$DATABASE_URL_UNPOOLED" -f docs/db_initial_schema.sql
+```
+
+Verify it worked by running this in the SQL Editor:
+```sql
+SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
+```
+
+You should see three rows: `quizzes`, `seb_config_files`, `seb_settings`.
+
+### 2.5 Configure Environment
 
 ```bash
 # Windows:
@@ -288,7 +326,7 @@ SEB_DEFAULT_QUIT_PASSWORD=<intentionally leave this blank>
 SEB_DEFAULT_ALLOWED_DOMAIN=localhost:3000
 ```
 
-### 2.4 Start the Backend Server
+### 2.6 Start the Backend Server
 
 Open a terminal in the project root and run:
 
@@ -300,7 +338,7 @@ This starts the LTI backend on port 3001. Leave this terminal running.
 
 Verify it's working: `http://localhost:3001/keys` should return a JSON object with a `keys` array.
 
-### 2.5 Start the Frontend Server
+### 2.7 Start the Frontend Server
 
 Open a **second terminal** in the project root and run:
 
@@ -493,6 +531,10 @@ This is expected. The tool's root URL requires an LTI launch from Canvas — you
 
 All source files must use CommonJS (`require`/`module.exports`), not ES modules (`import`/`export default`). If you see `SyntaxError: Unexpected token 'export'`, change `export default` to `module.exports =` and `import X from Y` to `const X = require(Y)`.
 
+### SSL deprecation warning from pg library
+
+On startup you may see a `SECURITY WARNING` about SSL modes from the `pg` library. This is an informational deprecation notice about a future major version — it does not affect connectivity. You can safely ignore it.
+
 ### Docker containers show as running but `docker stats` shows dashes
 
 Docker/WSL 2 is in a bad state. Force restart:
@@ -545,5 +587,4 @@ docker compose down
 
 - `/health` endpoint is behind LTI authentication (should be public) — minor, non-blocking
 - `devMode` in app.js is set to `false` — set to `true` temporarily if you need debug logging for LTI issues
-- Canvas API integration is not yet implemented — `CANVAS_API_TOKEN` in `.env` is a placeholder for when this is built out
 - Canvas first boot on WSL 2 can take up to 5 minutes — subsequent boots are faster due to caching

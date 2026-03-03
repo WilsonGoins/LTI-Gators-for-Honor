@@ -1,4 +1,4 @@
-// this defines express routes related to quizzes and communicated with the database via db/client.js
+// this defines express routes related to quizzes and communicates with the database via db/client.js
 
 const { Router } = require("express");
 const {
@@ -12,17 +12,50 @@ const router = Router();
 const CANVAS_URL = process.env.CANVAS_URL;
 
 
+// This follows the "rel=next" chain of result pages until all pages are fetched
+function getNextUrl(linkHeader) {
+  if (!linkHeader) return null;
+
+  const matches = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+  return matches ? matches[1] : null;
+}
+
+
+// pagination helper function
+async function fetchAllPages(url, headers) {
+  const allResults = [];
+  let nextUrl = url;
+
+  while (nextUrl) {
+    const res = await fetch(nextUrl, { headers });
+
+    if (!res.ok) {
+      // Return what we have so far + a flag that it failed
+      return { data: allResults, ok: allResults.length > 0, status: res.status };
+    }
+
+    const page = await res.json();
+    allResults.push(...page);
+
+    nextUrl = getNextUrl(res.headers.get("link"));
+  }
+
+  return { data: allResults, ok: true, status: 200 };
+}
+
+
 // fetch quizzes from Canvas
 async function fetchFromCanvas(courseId, canvasToken) {
   const headers = { Authorization: `Bearer ${canvasToken}` };
 
   const [classicRes, newRes] = await Promise.all([
-    fetch(`${CANVAS_URL}/api/v1/courses/${courseId}/quizzes?per_page=100`, { headers }),
-    fetch(`${CANVAS_URL}/api/quiz/v1/courses/${courseId}/quizzes?per_page=100`, { headers }),
+    fetchAllPages(`${CANVAS_URL}/api/v1/courses/${courseId}/quizzes?per_page=100`, { headers }),
+    fetchAllPages(`${CANVAS_URL}/api/quiz/v1/courses/${courseId}/quizzes?per_page=100`, { headers }),
   ]);
 
-  console.log("Canvas classic response:", classicRes.status);
-  console.log("Canvas new quiz response:", newRes.status);
+  if (!classicRes.ok && !newRes.ok) {   // if there's an error we don't return an empty list (bc that would delete everything from db)
+    throw new Error(`Canvas API unavailable (classic: ${classicRes.status}, new: ${newRes.status})`);
+  }
 
   const classic = classicRes.ok ? await classicRes.json() : [];
   const newQuizzes = newRes.ok ? await newRes.json() : [];
