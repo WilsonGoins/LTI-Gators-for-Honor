@@ -9,16 +9,87 @@ export interface LTIContext {
   canvasUrl: string;
 }
 
-// Quiz data (dummy for now, eventually from Canvas API + DB)
+// sort keys used on the dashboard quiz list
+export type SortKey = "title" | "dueAt" | "sebConfigured";
+
+// to store both types of quizzes
 export interface Quiz {
+  // composite primary key (quiz_id + course_id)
+  id: string;
+  courseId: string;
+
+  // core display fields
+  title: string;
+  description: string | null;
+  dueAt: string | null;          
+  lockAt: string | null;         
+  unlockAt: string | null;       
+  published: boolean;
+  pointsPossible: number | null;
+  questionCount: number;
+  timeLimitSeconds: number | null;
+
+  // security / access settings
+  hasAccessCode: boolean;
+  allowedAttempts: number;       // -1 = unlimited
+  shuffleQuestions: boolean;
+  shuffleAnswers: boolean;
+  oneAtATime: boolean;
+  allowBacktracking: boolean;
+
+  // metadata
+  quizType: "classic" | "new";
+  assignmentGroupId: string | null;
+
+  // SEB status (will get from db)
+  sebConfigured: boolean;
+  sebConfiguredDate: string | null;
+}
+
+// Canvas Classic Quiz data structure (from Canvas API)
+export interface CanvasClassicQuiz {
+  id: number;
+  title: string;
+  description: string | null;
+  due_at: string | null;
+  lock_at: string | null;
+  unlock_at: string | null;
+  published: boolean;
+  points_possible: number | null;
+  question_count: number;
+  time_limit: number | null;      // minutes 
+  allowed_attempts: number;
+  shuffle_questions: boolean;
+  shuffle_answers: boolean;
+  one_question_at_a_time: boolean;
+  cant_go_back: boolean;        
+  access_code: string | null;    //  non-null & non-empty = has access code
+  assignment_group_id: number | null;
+}
+
+// Canvas New Quiz data structure (from Canvas API)
+export interface CanvasNewQuiz {
   id: string;
   title: string;
-  dueAt: string | null;
-  pointsPossible: number;
-  questionCount: number;
+  instructions: string | null; 
+  due_at: string | null;
+  lock_at: string | null;
+  unlock_at: string | null;
   published: boolean;
-  sebConfigured: boolean;
-  sebSettings?: SEBSettings;
+  points_possible: number | null;
+  assignment_group_id: string | null;
+  quiz_settings?: {
+    question_count?: number;
+    student_access_code?: string | null;
+    has_time_limit?: boolean;
+    session_time_limit_in_seconds?: number | null;
+    allowed_attempts?: number;
+    shuffle_questions?: boolean;
+    shuffle_answers?: boolean;
+    one_at_a_time_type?: "none" | "question";
+    allow_backtracking?: boolean;
+    require_student_access_code?: boolean;
+  };
 }
 
 // SEB configuration settings

@@ -1,45 +1,10 @@
-# =============================================================================
-# Docker Compose — MongoDB + (optionally) the LTI Tool
-# =============================================================================
-# Canvas runs separately via its own Docker setup (canvas-lms repo, port 3000).
-#
-# RECOMMENDED LOCAL DEV WORKFLOW:
-#   1. Start Canvas:        cd canvas && docker compose up -d
-#   2. Start MongoDB:       cd this-repo && docker compose up -d mongo
-#   3. Run the LTI tool:    npm run dev
-#
-#   Running the tool directly with npm (not in Docker) means "localhost"
-#   works everywhere — the tool can reach Canvas at localhost:3000 and
-#   MongoDB at localhost:27017 without any networking workarounds.
-#
-# FULL DOCKER (optional, for deployment or CI):
-#   docker compose up -d
-#   NOTE: Change Canvas URLs in .env from "localhost" to "host.docker.internal"
-#   since "localhost" inside a container refers to the container, not your machine.
-# =============================================================================
-
 services:
   app:
     build: .
     ports:
       - "${TOOL_PORT:-3001}:3001"
-    environment:
-      - MONGODB_URI=mongodb://mongo:27017/canvas-seb-lti
     env_file:
       - .env
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
-      - mongo
     restart: unless-stopped
-
-  mongo:
-    image: mongo:7
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
-    restart: unless-stopped
-
-volumes:
-  mongo_data:

@@ -1,150 +1,46 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 import { Search, ArrowUpDown } from "lucide-react";
-import { LTIContext, Quiz } from "@/lib/types";
-import { DUMMY_QUIZZES } from "@/lib/dummy-data";
+import { Quiz, SortKey } from "@/lib/types";
 import { QuizCard } from "@/components/quiz-card";
 import { SEBSettingsDialog } from "@/components/seb-settings-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { DashboardSkeleton } from "@/components/dashboard-skeleton";
-import {
-  FilterDropdown,
-  DEFAULT_FILTERS,
-  getActiveFilterCount,
-  type FilterState,
-} from "@/components/filter-dropdown";
+import { FilterDropdown } from "@/components/filter-dropdown";
 import { cn } from "@/lib/utils";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
-
-type SortKey = "title" | "dueAt" | "sebConfigured";
+import { useLTIContext } from "@/hooks/use-lti-context";
+import { useFilteredQuizzes } from "@/hooks/use-filtered-quizzes";
 
 export default function DashboardPage() {
-  // ── State ──────────────────────────────────────────────────────────────
-  const [context, setContext] = useState<LTIContext | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [devMode, setDevMode] = useState(false);
+  // data & auth 
+  const { quizzes, loading, error, devMode } = useLTIContext();   
+  // useLTIContext() returns `context` as well, but we aren't using that for now so we remove it for linter
 
-  const [quizzes] = useState<Quiz[]>(DUMMY_QUIZZES);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
-  const [sortKey, setSortKey] = useState<SortKey>("dueAt");
-  const [sortAsc, setSortAsc] = useState(true);
+  // search, filter, sort 
+  const {
+    filteredQuizzes,
+    searchQuery,
+    setSearchQuery,
+    filters,
+    setFilters,
+    sortKey,
+    sortAsc,
+    handleSort,
+    hasActiveFilters,
+  } = useFilteredQuizzes(quizzes);
 
+  // SEB settings dialog 
   const [settingsQuiz, setSettingsQuiz] = useState<Quiz | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // ── Fetch LTI context on mount ────────────────────────────────────────
-  useEffect(() => {
-    async function init() {
-      const params = new URLSearchParams(window.location.search);
-      const token = params.get("token");
-
-      if (!token) {
-        console.log("⚡ No LTI token found — running in dev mode");
-        setDevMode(true);
-        setContext({
-          courseId: "dev-101",
-          courseTitle: "PSY 2012 — Introduction to Psychology",
-          userName: "Dr. Jane Smith",
-          userEmail: "jsmith@ufl.edu",
-          roles: ["Instructor"],
-          avatarUrl: null,
-          canvasUrl: "https://canvas.ufl.edu",
-        });
-        setLoading(false);
-        window.history.replaceState({}, "", window.location.pathname);
-        return;
-      }
-
-      try {
-        sessionStorage.setItem("seb_token", token);
-
-        const res = await fetch(`${BACKEND_URL}/api/context`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!res.ok) {
-          throw new Error(`Failed to fetch context (${res.status})`);
-        }
-
-        const data: LTIContext = await res.json();
-        setContext(data);
-        window.history.replaceState({}, "", window.location.pathname);
-      } catch (err) {
-        console.error("Context fetch error:", err);
-        setError(
-          err instanceof Error ? err.message : "Failed to load LTI context"
-        );
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    init();
-  }, []);
-
-  // ── Filtering + sorting ───────────────────────────────────────────────
-  const filteredQuizzes = useMemo(() => {
-    let result = [...quizzes];
-
-    // Text search
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter((quiz) =>
-        quiz.title.toLowerCase().includes(q)
-      );
-    }
-
-    // SEB status filters (if neither is checked, show all)
-    const hasSebFilter = filters.sebActive || filters.sebNone;
-    if (hasSebFilter) {
-      result = result.filter((quiz) => {
-        if (filters.sebActive && quiz.sebConfigured) return true;
-        if (filters.sebNone && !quiz.sebConfigured) return true;
-        return false;
-      });
-    }
-
-    // Publish status filters (if neither is checked, show all)
-    const hasPubFilter = filters.published || filters.draft;
-    if (hasPubFilter) {
-      result = result.filter((quiz) => {
-        if (filters.published && quiz.published) return true;
-        if (filters.draft && !quiz.published) return true;
-        return false;
-      });
-    }
-
-    // Sort
-    result.sort((a, b) => {
-      let cmp = 0;
-      switch (sortKey) {
-        case "title":
-          cmp = a.title.localeCompare(b.title);
-          break;
-        case "dueAt":
-          if (!a.dueAt && !b.dueAt) cmp = 0;
-          else if (!a.dueAt) cmp = 1;
-          else if (!b.dueAt) cmp = -1;
-          else cmp = new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
-          break;
-        case "sebConfigured":
-          cmp = (a.sebConfigured ? 1 : 0) - (b.sebConfigured ? 1 : 0);
-          break;
-      }
-      return sortAsc ? cmp : -cmp;
-    });
-
-    return result;
-  }, [quizzes, searchQuery, filters, sortKey, sortAsc]);
-
-  // ── Handlers ──────────────────────────────────────────────────────────
+  // handlers 
   const handleConfigure = useCallback((quiz: Quiz) => {
     console.log("Configure SEB for:", quiz.title);
-    alert(`Navigate to SEB configuration wizard for "${quiz.title}"\n\n(This will be implemented as a separate page)`);
+    alert(
+      `Navigate to SEB configuration wizard for "${quiz.title}"\n\n(This will be implemented as a separate page)`
+    );
   }, []);
 
   const handleViewSettings = useCallback((quiz: Quiz) => {
@@ -155,24 +51,12 @@ export default function DashboardPage() {
   const handleEditSettings = useCallback((quiz: Quiz) => {
     setSettingsOpen(false);
     console.log("Edit SEB settings for:", quiz.title);
-    alert(`Navigate to SEB configuration wizard (edit mode) for "${quiz.title}"`);
+    alert(
+      `Navigate to SEB configuration wizard (edit mode) for "${quiz.title}"`
+    );
   }, []);
 
-  const handleSort = useCallback(
-    (key: SortKey) => {
-      if (sortKey === key) {
-        setSortAsc((prev) => !prev);
-      } else {
-        setSortKey(key);
-        setSortAsc(true);
-      }
-    },
-    [sortKey]
-  );
-
-  const hasActiveFilters = getActiveFilterCount(filters) > 0;
-
-  // ── Render ────────────────────────────────────────────────────────────
+  // loading / error states 
   if (loading) return <DashboardSkeleton />;
 
   if (error) {
@@ -194,6 +78,7 @@ export default function DashboardPage() {
     );
   }
 
+  // main render 
   return (
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-7xl px-6 py-8">
@@ -206,14 +91,14 @@ export default function DashboardPage() {
                 Development Mode
               </p>
               <p className="text-xs text-amber-600">
-                No LTI token detected. Displaying mock data — launch from Canvas
-                for real context.
+                No LTI token detected. Displaying mock data — launch from
+                Canvas for real context.
               </p>
             </div>
           </div>
         )}
 
-        {/* Toolbar: search + filter dropdown + sort */}
+        {/* Toolbar: search + filter + sort */}
         <div className="mt-8 mb-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
           {/* Search */}
           <div className="relative flex-1 w-full sm:max-w-xs">

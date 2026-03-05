@@ -21,9 +21,7 @@ const SESSION_SECRET =
 // Where the Next.js dev server is running
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3002';
 
-// ---------------------------------------------------------------------------
-// Middleware
-// ---------------------------------------------------------------------------
+//middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -214,11 +212,9 @@ app.post('/lti/login', (req, res) => {
   }
 });
 
-// ---------------------------------------------------------------------------
 // LTI Launch — Step 3 of OIDC handshake
 // Canvas POSTs the id_token here after authorization.
 // We validate the JWT, extract user/course info, then REDIRECT to Next.js.
-// ---------------------------------------------------------------------------
 app.post('/lti/launch', async (req, res) => {
   try {
     if (req.body.error) {
@@ -229,9 +225,6 @@ app.post('/lti/launch', async (req, res) => {
     const { id_token, state } = req.body;
 
     console.log('LTI Launching...');
-    // console.log('\n========== LTI LAUNCH ==========');
-    // console.log('state:', state);
-    // console.log('id_token present:', !!id_token);
 
     if (!id_token || !state) {
       throw new Error('Missing id_token or state');
@@ -256,9 +249,6 @@ app.post('/lti/launch', async (req, res) => {
 
     const header = JSON.parse(Buffer.from(headerEncoded, 'base64url').toString());
     const payload = JSON.parse(Buffer.from(payloadEncoded, 'base64url').toString());
-
-    // console.log('JWT kid:', header.kid);
-    // console.log('JWT iss:', payload.iss);
 
     // Verify nonce
     if (payload.nonce !== nonceData.nonce) {
@@ -295,8 +285,6 @@ app.post('/lti/launch', async (req, res) => {
       throw new Error('Invalid JWT signature');
     }
 
-    // console.log('✅ JWT signature verified');
-
     // Extract LTI claims
     const ltiContext =
       payload['https://purl.imsglobal.org/spec/lti/claim/context'] || {};
@@ -305,16 +293,16 @@ app.post('/lti/launch', async (req, res) => {
     const custom =
       payload['https://purl.imsglobal.org/spec/lti/claim/custom'] || {};
 
-    // Debug: log the full payload so you can see exactly what Canvas sends
-    // console.log('Full JWT payload keys:', Object.keys(payload));
-    // console.log('given_name:', payload.given_name, '| family_name:', payload.family_name);
-    // console.log('name:', payload.name, '| picture:', payload.picture);
-
+    // Extract numeric course ID from the launch_presentation return_url
+    const launchPresentation =
+      payload['https://purl.imsglobal.org/spec/lti/claim/launch_presentation'] || {};
+    const returnUrlMatch = (launchPresentation.return_url || '').match(/\/courses\/(\d+)/);
+    const numericCourseId = custom.canvas_course_id || (returnUrlMatch && returnUrlMatch[1]);
 
     // Debug: dump full payload so you can see exactly what Canvas sends
-    console.log('\n--- FULL JWT PAYLOAD ---');
-    console.log(JSON.stringify(payload, null, 2));
-    console.log('--- END PAYLOAD ---\n');
+    // console.log('\n--- FULL JWT PAYLOAD ---');
+    // console.log(JSON.stringify(payload, null, 2));
+    // console.log('--- END PAYLOAD ---\n');
 
 
     // Canvas LTI 1.3 uses OIDC standard claims: given_name + family_name
@@ -333,7 +321,7 @@ app.post('/lti/launch', async (req, res) => {
       null;
 
     const context = {
-      courseId: ltiContext.id,
+      courseId: numericCourseId || ltiContext.id,
       courseTitle: ltiContext.title,
       userName,
       userEmail: payload.email || custom.user_email || 'N/A',
@@ -341,11 +329,6 @@ app.post('/lti/launch', async (req, res) => {
       avatarUrl,
       canvasUrl,
     };
-
-    // console.log('User:', context.userName);
-    // console.log('Course:', context.courseTitle);
-    // console.log('Roles:', context.roles.join(', '));
-    // console.log('================================\n');
 
     // Check instructor role
     const isInstructor = roles.some(
@@ -393,21 +376,19 @@ app.post('/lti/launch', async (req, res) => {
   }
 });
 
-// ---------------------------------------------------------------------------
-// SEB routes (existing functionality)
-// ---------------------------------------------------------------------------
+// seb routes
 const sebRoutes = require('./routes/seb');
 app.use('/seb', sebRoutes);
 
-// ---------------------------------------------------------------------------
-// LTI info routes (development only)
-// ---------------------------------------------------------------------------
+// lti routes
 const ltiRoutes = require('./routes/lti');
 app.use('/lti-info', ltiRoutes);
 
-// ---------------------------------------------------------------------------
-// Root — simple status page
-// ---------------------------------------------------------------------------
+// quiz routes
+const quizRoutes = require('./routes/quizzes');
+app.use(quizRoutes);
+
+// status page
 app.get('/', (req, res) => {
   res.send(`
     <html>

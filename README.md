@@ -17,7 +17,7 @@ The Canvas SEB Quiz Creator is an LTI 1.3 application that provides a unified wi
 If this is your first time, see \docs\SETUP_GUIDE.md
 
 ## Tech Stack
-The frontend is built with Next.js (React) and runs on :3002, while the Node.js/Express backend handles LTI 1.3 launch logic on :3001. LTI integration is managed by OIDC. For local development, Canvas LMS runs in Docker on :3000. Canvas REST API integration for quiz creation and management is currently in progress.
+The frontend is built with Next.js (React) and runs on :3002, while the Node.js/Express backend handles LTI 1.3 launch logic on :3001. LTI integration is managed by OIDC. For local development, Canvas LMS runs in Docker on :3000. Quiz metadata and SEB configuration data are persisted in a PostgreSQL database hosted on [Neon](https://neon.tech).
 
 ## Daily Development Workflow
 
@@ -76,3 +76,4 @@ See `.env.example` for the full template.
 - [SEB Config Key Spec](https://safeexambrowser.org/developer/seb-config-key.html)
 - [SEB File Format Spec](https://safeexambrowser.org/developer/seb-file-format.html)
 - [LTI 1.3 Specification](https://www.imsglobal.org/spec/lti/v1p3/)
+- [Neon Docs](https://neon.tech/docs)
