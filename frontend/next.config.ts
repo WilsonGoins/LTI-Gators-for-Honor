@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              "frame-ancestors 'self' http://localhost:* http://127.0.0.1:* https://*.instructure.com",
+                "frame-ancestors 'self' http://canvas.docker http://localhost:* http://127.0.0.1:* https://*.instructure.com",
           },
         ],
       },

@@ -5,8 +5,8 @@ import { CanvasClassicQuiz, CanvasNewQuiz, Quiz } from "@/lib/types";
 
 // convert a Classic Quiz from the Canvas API into our internal Quiz structure
 export function normalizeClassicQuiz(
-  raw: CanvasClassicQuiz,
-  courseId: string
+    raw: CanvasClassicQuiz,
+    courseId: string
 ): Quiz {
   return {
     // primary keys
@@ -23,7 +23,7 @@ export function normalizeClassicQuiz(
     pointsPossible: raw.points_possible ?? null,
     questionCount: raw.question_count ?? 0,
     timeLimitSeconds:
-      raw.time_limit != null ? raw.time_limit * 60 : null, // Canvas gives minutes
+        raw.time_limit != null ? raw.time_limit * 60 : null, // Canvas gives minutes
 
     // security-related settings
     hasAccessCode: Boolean(raw.access_code),
@@ -36,20 +36,21 @@ export function normalizeClassicQuiz(
     // metadata
     quizType: "classic" as const,
     assignmentGroupId: raw.assignment_group_id
-      ? String(raw.assignment_group_id)
-      : null,
+        ? String(raw.assignment_group_id)
+        : null,
 
     // SEB status — defaults until we fetch from DB
     sebConfigured: false,
     sebConfiguredDate: null,
+    sebSettings: null,
   };
 }
 
 
 // convert a New Quiz from the Canvas API into our internal Quiz structure
 export function normalizeNewQuiz(
-  raw: CanvasNewQuiz,
-  courseId: string
+    raw: CanvasNewQuiz,
+    courseId: string
 ): Quiz {
   const s = raw.quiz_settings ?? {};
 
@@ -68,8 +69,8 @@ export function normalizeNewQuiz(
     pointsPossible: raw.points_possible ?? null,
     questionCount: s.question_count ?? 0,
     timeLimitSeconds: s.has_time_limit
-      ? (s.session_time_limit_in_seconds ?? null)
-      : null,
+        ? (s.session_time_limit_in_seconds ?? null)
+        : null,
 
     // security-related settings
     hasAccessCode: Boolean(s.student_access_code),
@@ -82,11 +83,12 @@ export function normalizeNewQuiz(
     // metadata
     quizType: "new" as const,
     assignmentGroupId: raw.assignment_group_id
-      ? String(raw.assignment_group_id)
-      : null,
+        ? String(raw.assignment_group_id)
+        : null,
 
     // SEB status — defaults until we fetch from DB
     sebConfigured: false,
     sebConfiguredDate: null,
+    sebSettings: null,
   };
 }

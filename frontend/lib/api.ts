@@ -33,8 +33,8 @@ export async function fetchLTIContext(token: string): Promise<LTIContext> {
 
 // fetch both types of quizzes, upsert and join tables (in backend) and then normalize them
 export async function fetchQuizzes(
-  courseId: string,
-  token: string
+    courseId: string,
+    token: string
 ): Promise<Quiz[]> {
   const res = await fetch(`${BACKEND_URL}/api/courses/${courseId}/quizzes`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -48,10 +48,10 @@ export async function fetchQuizzes(
 
   // normalize both quiz types
   const classicQuizzes = (data.classic ?? []).map((q) =>
-    normalizeClassicQuiz(q, courseId)
+      normalizeClassicQuiz(q, courseId)
   );
   const newQuizzes = (data.new ?? []).map((q) =>
-    normalizeNewQuiz(q, courseId)
+      normalizeNewQuiz(q, courseId)
   );
 
   const allQuizzes = [...classicQuizzes, ...newQuizzes];
@@ -67,4 +67,29 @@ export async function fetchQuizzes(
   }
 
   return allQuizzes;    // return as an array of normalized quizzes with SEB status merged in
+}
+
+
+// sets a randomized access code on a Canvas quiz (or replaces the existing one)
+export async function setAccessCode(
+    courseId: string,
+    quizId: string,
+    quizType: "classic" | "new",
+    token: string
+): Promise<{ accessCode: string }> {
+  const res = await fetch(`${BACKEND_URL}/seb/access-code`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ courseId, quizId, quizType }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.detail || err.error || `Failed to set access code (${res.status})`);
+  }
+
+  return res.json();
 }

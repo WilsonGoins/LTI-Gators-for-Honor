@@ -6,8 +6,11 @@
 // =============================================================================
 
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const seb = require('../services/seb');
+
+const CANVAS_URL = process.env.CANVAS_URL;
 
 // ---------------------------------------------------------------------------
 // GET /seb/presets
@@ -106,6 +109,90 @@ router.post('/config-key', express.json(), (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /seb/access-code
+// Sets a randomized access code on a Canvas quiz.
+// If the quiz already has one, it gets replaced with a new random code.
+//
+// Body:
+//   {
+//     courseId: "5",
+//     quizId: "42",
+//     quizType: "classic" | "new"
+//   }
+//
+// Returns: { accessCode: "a1b2c3d4e5f6" }
+// ---------------------------------------------------------------------------
+
+router.post('/access-code', express.json(), async (req, res) => {
+  try {
+    const { courseId, quizId, quizType } = req.body;
+
+    if (!courseId || !quizId) {
+      return res.status(400).json({ error: 'courseId and quizId are required' });
+    }
+
+    const canvasToken = process.env.CANVAS_API_TOKEN;
+    if (!canvasToken) {
+      return res.status(500).json({ error: 'Canvas API token not configured' });
+    }
+
+    // Generate a random 12-character hex access code
+    const accessCode = crypto.randomBytes(6).toString('hex');
+
+    // Push the access code to Canvas — different API for classic vs new quizzes
+    let canvasRes;
+
+    if (quizType === 'new') {
+      canvasRes = await fetch(
+          `${CANVAS_URL}/api/quiz/v1/courses/${courseId}/quizzes/${quizId}`,
+          {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${canvasToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              quiz_settings: {
+                require_student_access_code: true,
+                student_access_code: accessCode,
+              },
+            }),
+          }
+      );
+    } else {
+      canvasRes = await fetch(
+          `${CANVAS_URL}/api/v1/courses/${courseId}/quizzes/${quizId}`,
+          {
+            method: 'PUT',
+            headers: {
+              Authorization: `Bearer ${canvasToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              quiz: { access_code: accessCode },
+            }),
+          }
+      );
+    }
+
+    if (!canvasRes.ok) {
+      const errBody = await canvasRes.text();
+      console.error('Canvas access code error:', canvasRes.status, errBody);
+      return res.status(502).json({
+        error: 'Failed to set access code on Canvas',
+        detail: `Canvas returned ${canvasRes.status}`,
+      });
+    }
+
+    console.log(`✅ Access code set for course ${courseId}, quiz ${quizId}: ${accessCode}`);
+    res.json({ accessCode });
+  } catch (err) {
+    console.error('Access code error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /seb/generate-test
 // Quick test endpoint — generates a sample .seb file with defaults.
 // Useful for verifying the generation pipeline works.
@@ -163,9 +250,9 @@ router.get('/generate-test-download', (req, res) => {
 // Helper to escape HTML for display
 function escapeHtml(str) {
   return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
 }
 
 module.exports = router;

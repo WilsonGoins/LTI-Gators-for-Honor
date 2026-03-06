@@ -21,9 +21,9 @@ export interface Quiz {
   // core display fields
   title: string;
   description: string | null;
-  dueAt: string | null;          
-  lockAt: string | null;         
-  unlockAt: string | null;       
+  dueAt: string | null;
+  lockAt: string | null;
+  unlockAt: string | null;
   published: boolean;
   pointsPossible: number | null;
   questionCount: number;
@@ -44,6 +44,7 @@ export interface Quiz {
   // SEB status (will get from db)
   sebConfigured: boolean;
   sebConfiguredDate: string | null;
+  sebSettings?: SEBSettings | null;
 }
 
 // Canvas Classic Quiz data structure (from Canvas API)
@@ -57,12 +58,12 @@ export interface CanvasClassicQuiz {
   published: boolean;
   points_possible: number | null;
   question_count: number;
-  time_limit: number | null;      // minutes 
+  time_limit: number | null;      // minutes
   allowed_attempts: number;
   shuffle_questions: boolean;
   shuffle_answers: boolean;
   one_question_at_a_time: boolean;
-  cant_go_back: boolean;        
+  cant_go_back: boolean;
   access_code: string | null;    //  non-null & non-empty = has access code
   assignment_group_id: number | null;
 }
@@ -71,7 +72,7 @@ export interface CanvasClassicQuiz {
 export interface CanvasNewQuiz {
   id: string;
   title: string;
-  instructions: string | null; 
+  instructions: string | null;
   due_at: string | null;
   lock_at: string | null;
   unlock_at: string | null;
