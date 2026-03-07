@@ -11,6 +11,7 @@ import {
   Eye,
   EyeOff,
   Lock,
+  LockOpen,
 } from "lucide-react";
 import { Quiz } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,9 @@ function getDueStatus(iso: string | null): "overdue" | "soon" | "upcoming" | "no
 export function QuizCard({ quiz, onConfigure, onViewSettings }: QuizCardProps) {
   const dueStatus = getDueStatus(quiz.dueAt);
 
+  // Fully secured = SEB config generated AND access code set on Canvas
+  const fullSecured = quiz.sebConfigured && quiz.hasAccessCode;
+
   return (
       <div
           className={cn(
@@ -57,11 +61,15 @@ export function QuizCard({ quiz, onConfigure, onViewSettings }: QuizCardProps) {
               !quiz.published && "opacity-75"
           )}
       >
-        {/* SEB status indicator — subtle left border accent */}
+        {/* Left border accent: green = fully secured, amber = partial, gray = nothing */}
         <div
             className={cn(
                 "absolute left-0 top-3 bottom-3 w-[3px] rounded-full transition-colors",
-                quiz.sebConfigured ? "bg-emerald-500" : "bg-border"
+                fullSecured
+                    ? "bg-emerald-500"
+                    : quiz.sebConfigured || quiz.hasAccessCode
+                        ? "bg-amber-400"
+                        : "bg-border"
             )}
         />
 
@@ -95,24 +103,30 @@ export function QuizCard({ quiz, onConfigure, onViewSettings }: QuizCardProps) {
               <FileQuestion className="w-3.5 h-3.5" />
                 {quiz.questionCount} questions
             </span>
-
-              {/* Randomized Access Code indicator */}
-              <label className="inline-flex items-center gap-1.5 cursor-default select-none">
-                <Lock className="w-3.5 h-3.5" />
-                <input
-                    type="checkbox"
-                    checked={quiz.hasAccessCode}
-                    readOnly
-                    className="w-3.5 h-3.5 rounded border-border accent-primary pointer-events-none"
-                />
-                <span className={cn(
-                    "text-sm",
-                    quiz.hasAccessCode ? "text-foreground font-medium" : "text-muted-foreground"
-                )}>
-                Randomized Access Code
-              </span>
-              </label>
             </div>
+
+            {/* Security status pills — only visible when something is configured */}
+            {(quiz.sebConfigured || quiz.hasAccessCode) && (
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  {quiz.hasAccessCode ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium">
+                  <Lock className="w-3 h-3" />
+                  Access Code
+                </span>
+                  ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 text-xs font-medium">
+                  <LockOpen className="w-3 h-3" />
+                  No Access Code
+                </span>
+                  )}
+                  {quiz.sebConfigured && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-medium">
+                  <ShieldCheck className="w-3 h-3" />
+                  SEB Config
+                </span>
+                  )}
+                </div>
+            )}
           </div>
 
           {/* Status badges */}
@@ -129,10 +143,15 @@ export function QuizCard({ quiz, onConfigure, onViewSettings }: QuizCardProps) {
                 </Badge>
             )}
 
-            {quiz.sebConfigured ? (
+            {fullSecured ? (
                 <Badge variant="success" className="gap-1">
                   <ShieldCheck className="w-3 h-3" />
-                  SEB Active
+                  Secured
+                </Badge>
+            ) : quiz.sebConfigured || quiz.hasAccessCode ? (
+                <Badge variant="secondary" className="gap-1 border-amber-300 bg-amber-50 text-amber-700">
+                  <ShieldAlert className="w-3 h-3" />
+                  Partial
                 </Badge>
             ) : (
                 <Badge variant="destructive" className="gap-1">
@@ -155,11 +174,18 @@ export function QuizCard({ quiz, onConfigure, onViewSettings }: QuizCardProps) {
                   month: "short",
                   day: "numeric",
                 })}{" "}
-                · {quiz.sebSettings.securityLevel.replace("_", " ")} security
+                · {quiz.sebSettings.securityLevel.replace(/([A-Z])/g, ' $1').toLowerCase()} security
+                {!quiz.hasAccessCode && (
+                    <span className="text-amber-600 ml-1">
+                · No access code
+              </span>
+                )}
               </p>
           ) : (
               <p className="text-xs text-muted-foreground">
-                SEB lockdown browser not configured for this quiz.
+                {quiz.hasAccessCode
+                    ? "Access code set, but no SEB config generated yet."
+                    : "SEB lockdown browser not configured for this quiz."}
               </p>
           )}
 

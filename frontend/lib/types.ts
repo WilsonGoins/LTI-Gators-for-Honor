@@ -95,7 +95,7 @@ export interface CanvasNewQuiz {
 
 // SEB configuration settings
 export interface SEBSettings {
-  securityLevel: "standard" | "high" | "open_book" | "testing_center";
+  securityLevel: "standard" | "high" | "openBook" | "testingCenter";
   allowQuit: boolean;
   allowScreenSharing: boolean;
   allowVirtualMachine: boolean;

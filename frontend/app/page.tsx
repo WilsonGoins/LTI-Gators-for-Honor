@@ -5,6 +5,7 @@ import { Search, ArrowUpDown } from "lucide-react";
 import { Quiz, SortKey } from "@/lib/types";
 import { QuizCard } from "@/components/quiz-card";
 import { SEBSettingsDialog } from "@/components/seb-settings-dialog";
+import { SEBConfigDialog } from "@/components/seb-config-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { DashboardSkeleton } from "@/components/dashboard-skeleton";
 import { FilterDropdown } from "@/components/filter-dropdown";
@@ -12,7 +13,6 @@ import { cn } from "@/lib/utils";
 
 import { useLTIContext } from "@/hooks/use-lti-context";
 import { useFilteredQuizzes } from "@/hooks/use-filtered-quizzes";
-import { setAccessCode } from "@/lib/api";
 
 export default function DashboardPage() {
   // data & auth
@@ -31,44 +31,19 @@ export default function DashboardPage() {
     hasActiveFilters,
   } = useFilteredQuizzes(quizzes);
 
-  // SEB settings dialog
+  // SEB settings dialog (view mode)
   const [settingsQuiz, setSettingsQuiz] = useState<Quiz | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // SEB config dialog (configure mode)
+  const [configQuiz, setConfigQuiz] = useState<Quiz | null>(null);
+  const [configOpen, setConfigOpen] = useState(false);
+
   // handlers
-  const handleConfigure = useCallback(async (quiz: Quiz) => {
-    const token = sessionStorage.getItem("seb_token");
-
-    // Set a randomized access code on Canvas (or replace existing one)
-    if (token && context?.courseId) {
-      try {
-        const { accessCode } = await setAccessCode(
-            context.courseId,
-            quiz.id,
-            quiz.quizType,
-            token
-        );
-        console.log(`Access code set for "${quiz.title}": ${accessCode}`);
-
-        // Update local state so the checkbox reflects the change immediately
-        setQuizzes((prev) =>
-            prev.map((q) =>
-                q.id === quiz.id ? { ...q, hasAccessCode: true } : q
-            )
-        );
-      } catch (err) {
-        console.error("Failed to set access code:", err);
-        alert(`Failed to set access code: ${err instanceof Error ? err.message : err}`);
-        return;
-      }
-    }
-
-    // TODO: Navigate to the SEB configuration wizard page
-    console.log("Configure SEB for:", quiz.title);
-    alert(
-        `Navigate to SEB configuration wizard for "${quiz.title}"\n\n(This will be implemented as a separate page)`
-    );
-  }, [context, setQuizzes]);
+  const handleConfigure = useCallback((quiz: Quiz) => {
+    setConfigQuiz(quiz);
+    setConfigOpen(true);
+  }, []);
 
   const handleViewSettings = useCallback((quiz: Quiz) => {
     setSettingsQuiz(quiz);
@@ -77,13 +52,28 @@ export default function DashboardPage() {
 
   const handleEditSettings = useCallback((quiz: Quiz) => {
     setSettingsOpen(false);
-    console.log("Edit SEB settings for:", quiz.title);
-    alert(
-        `Navigate to SEB configuration wizard (edit mode) for "${quiz.title}"`
-    );
+    setConfigQuiz(quiz);
+    setConfigOpen(true);
   }, []);
 
-  // loading / error states 
+  // Called after the config dialog saves successfully
+  const handleConfigSaved = useCallback((quizId: string, accessCodeSet: boolean, settings: import("@/lib/types").SEBSettings) => {
+    setQuizzes((prev) =>
+        prev.map((q) =>
+            q.id === quizId
+                ? {
+                  ...q,
+                  hasAccessCode: accessCodeSet ? true : q.hasAccessCode,
+                  sebConfigured: true,
+                  sebConfiguredDate: new Date().toISOString(),
+                  sebSettings: settings,
+                }
+                : q
+        )
+    );
+  }, [setQuizzes]);
+
+  // loading / error states
   if (loading) return <DashboardSkeleton />;
 
   if (error) {
@@ -105,7 +95,7 @@ export default function DashboardPage() {
     );
   }
 
-  // main render 
+  // main render
   return (
       <div className="min-h-screen bg-background">
         <main className="mx-auto max-w-7xl px-6 py-8">
@@ -195,12 +185,22 @@ export default function DashboardPage() {
           )}
         </main>
 
-        {/* Settings dialog */}
+        {/* Settings dialog (view mode) */}
         <SEBSettingsDialog
             quiz={settingsQuiz}
             open={settingsOpen}
             onClose={() => setSettingsOpen(false)}
             onEdit={handleEditSettings}
+        />
+
+        {/* Config dialog (configure mode) */}
+        <SEBConfigDialog
+            quiz={configQuiz}
+            open={configOpen}
+            courseId={context?.courseId || ""}
+            canvasUrl={context?.canvasUrl || ""}
+            onClose={() => setConfigOpen(false)}
+            onSaved={handleConfigSaved}
         />
       </div>
   );
