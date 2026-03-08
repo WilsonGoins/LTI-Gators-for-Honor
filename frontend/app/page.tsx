@@ -189,6 +189,7 @@ export default function DashboardPage() {
         <SEBSettingsDialog
             quiz={settingsQuiz}
             open={settingsOpen}
+            courseId={context?.courseId || ""}
             onClose={() => setSettingsOpen(false)}
             onEdit={handleEditSettings}
         />

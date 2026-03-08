@@ -1,25 +1,16 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import {
-  X,
-  ShieldCheck,
-  Monitor,
-  Globe,
-  Key,
-  Lock,
-  Wifi,
-  Copy,
-  Download,
-  Pencil,
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { X, ShieldCheck, Monitor, Globe, Key, Lock, Wifi, Copy, Download, Pencil, Loader2 } from "lucide-react";
 import { Quiz } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { BACKEND_URL } from "@/lib/api";
 
 interface SEBSettingsDialogProps {
   quiz: Quiz | null;
   open: boolean;
+  courseId: string;
   onClose: () => void;
   onEdit: (quiz: Quiz) => void;
 }
@@ -66,13 +57,9 @@ function SettingRow({
   );
 }
 
-export function SEBSettingsDialog({
-                                    quiz,
-                                    open,
-                                    onClose,
-                                    onEdit,
-                                  }: SEBSettingsDialogProps) {
+export function SEBSettingsDialog({ quiz, open, courseId, onClose, onEdit }: SEBSettingsDialogProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Close on escape
   useEffect(() => {
@@ -87,6 +74,52 @@ export function SEBSettingsDialog({
   // Close on backdrop click
   const handleOverlayClick = (e: React.MouseEvent) => {
     if (e.target === overlayRef.current) onClose();
+  };
+
+  const handleDownload = async () => {
+    if (!quiz) return;
+    setIsDownloading(true);
+
+    try {
+      const token = sessionStorage.getItem("seb_token");
+      if (!token) throw new Error("Session expired.");
+
+      // Fetch the file blob from the backend
+      const res = await fetch(`${BACKEND_URL}/seb/download/${courseId}/${quiz.id}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Download failed (${res.status})`);
+      }
+
+      // Extract filename from the Content-Disposition header if available
+      const contentDisposition = res.headers.get("Content-Disposition");
+      let filename = `seb_${quiz.title.replace(/\s+/g, "_").toLowerCase()}.seb`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="([^"]+)"/);
+        if (match && match[1]) filename = match[1];
+      }
+
+      // Create blob URL and trigger download
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to download SEB config:", error);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   if (!open || !quiz || !quiz.sebSettings) return null;
@@ -176,7 +209,7 @@ export function SEBSettingsDialog({
             </div>
 
             {/* Allowed domains */}
-            {settings.urlFilterEnabled && settings.allowedDomains.length > 0 && (
+            {settings.urlFilterEnabled && settings.allowedDomains && settings.allowedDomains.length > 0 && (
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-2">
                     Allowed Domains
@@ -230,9 +263,19 @@ export function SEBSettingsDialog({
               })}
             </p>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" className="gap-1.5">
-                <Download className="w-3.5 h-3.5" />
-                Download .seb
+              <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="gap-1.5"
+                  onClick={handleDownload}
+                  disabled={isDownloading}
+              >
+                {isDownloading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                    <Download className="w-3.5 h-3.5" />
+                )}
+                {isDownloading ? "Downloading..." : "Download .seb"}
               </Button>
               <Button
                   variant="default"
