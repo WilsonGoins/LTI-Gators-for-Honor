@@ -321,7 +321,7 @@ CANVAS_URL=http://localhost:3000
 TOOL_URL=http://localhost:3001
 TOOL_PORT=3001
 CANVAS_API_URL=http://localhost:3000/api/v1
-CANVAS_API_TOKEN=<leave blank — reserved for future server-side API calls>
+CANVAS_ACCESS_TOKEN=<leave blank — reserved for future server-side API calls>
 SEB_DEFAULT_QUIT_PASSWORD=<intentionally leave this blank>
 SEB_DEFAULT_ALLOWED_DOMAIN=localhost:3000
 ```
@@ -403,14 +403,14 @@ Back on the Developer Keys list, find your new key. Toggle the **State** switch 
 
 The Client ID is the number shown in the Details column (e.g., `10000000000007`). Copy it.
 
-### 3.4 Create the Acess Token
+### 3.4 Create the Access Token
 
 This is for API calls
 1. Go to **Account** → **Settings**
 2. Scroll down and click **+ New Access Token**
 3. Put "Safe Exam Browser Dev" for the name and then press **Generate Token**
 4. Copy down the token **IMMEDIATELY**, you will not be able to see it again.
-5. Update your the **CANVAS_API_TOKEN** attribute of your **.env** file with this token
+5. Update your the **CANVAS_ACCESS_TOKEN** attribute of your **.env** file with this token
 
 ### 3.5 Update .env
 
