@@ -220,11 +220,14 @@ export function SEBConfigDialog({
             setSaving(false);
             return;
         }
+        console.log("courseId:", courseId, "quizId:", quiz?.id);
 
         try {
             // Step 1: Optionally set randomized access code on Canvas
+            let accessCodeValue: string | null = null;
             if (setRandomAccessCode) {
-                await setAccessCode(courseId, quiz.id, quiz.quizType, token);
+                const result = await setAccessCode(courseId, quiz.id, quiz.quizType, token);
+                accessCodeValue = result.accessCode;
             }
 
             // Step 2: Generate the .seb config file via backend
@@ -241,11 +244,14 @@ export function SEBConfigDialog({
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
+                    courseId,
+                    quizId: quiz.id,
                     startURL,
                     preset: selectedPreset,
                     allowedDomains: domains,
                     quitPassword: quitPassword || null,
                     overrides,
+                    accessCode: accessCodeValue,
                 }),
             });
 

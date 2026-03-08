@@ -171,10 +171,10 @@ export function QuizCard({ quiz, onConfigure, onViewSettings }: QuizCardProps) {
               <p className="text-xs text-muted-foreground">
                 Configured{" "}
                 {new Date(quiz.sebSettings.configuredAt).toLocaleDateString("en-US", {
-                  month: "short",
+                  month: "long",
                   day: "numeric",
                 })}{" "}
-                · {quiz.sebSettings.securityLevel.replace(/([A-Z])/g, ' $1').toLowerCase()} security
+                · {quiz.sebSettings.securityLevel.replace(/([A-Z])/g, ' $1').toLowerCase().charAt(0).toUpperCase() + quiz.sebSettings.securityLevel.replace(/([A-Z])/g, ' $1').toLowerCase().slice(1)} Security
                 {!quiz.hasAccessCode && (
                     <span className="text-amber-600 ml-1">
                 · No access code
