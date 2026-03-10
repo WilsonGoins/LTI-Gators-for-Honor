@@ -154,7 +154,7 @@ router.post('/config-key', express.json(), (req, res) => {
 
 router.post('/access-code', express.json(), async (req, res) => {
   try {
-    const { courseId, quizId, quizType } = req.body;
+    const { courseId, quizId, quizType, accessCode: customCode } = req.body;
 
     if (!courseId || !quizId) {
       return res.status(400).json({ error: 'courseId and quizId are required' });
@@ -165,7 +165,8 @@ router.post('/access-code', express.json(), async (req, res) => {
       return res.status(500).json({ error: 'Canvas access token not configured' });
     }
 
-    const accessCode = crypto.randomBytes(6).toString('hex');
+    // Use custom code if provided, otherwise generate random
+    const accessCode = customCode || crypto.randomBytes(6).toString('hex');
 
     let canvasRes;
     if (quizType === 'new') {

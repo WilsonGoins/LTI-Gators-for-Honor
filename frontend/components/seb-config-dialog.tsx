@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
     X,
     Shield,
@@ -11,6 +11,7 @@ import {
     Lock,
     Loader2,
     AlertTriangle,
+    Pencil,
 } from "lucide-react";
 import { Quiz } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -151,7 +152,9 @@ export function SEBConfigDialog({
     );
     const [allowedDomains, setAllowedDomains] = useState("");
     const [quitPassword, setQuitPassword] = useState("");
-    const [setRandomAccessCode, setSetRandomAccessCode] = useState(true);
+    const [accessCode, setAccessCode_] = useState("");  
+    const [isEditingAccessCode, setIsEditingAccessCode] = useState(false);
+    const accessCodeInputRef = useRef<HTMLInputElement>(null);
 
     // Status
     const [saving, setSaving] = useState(false);
@@ -180,6 +183,18 @@ export function SEBConfigDialog({
             });
     }, [open, presetsLoaded]);
 
+
+    // Generate a random 6-character alphanumeric code
+    const generateRandomCode = useCallback(() => {
+        const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+        let code = "";
+        for (let i = 0; i < 6; i++) {
+            code += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return code;
+    }, []);
+
+
     // Reset form when a new quiz is opened
     useEffect(() => {
         if (open && quiz) {
@@ -187,11 +202,15 @@ export function SEBConfigDialog({
             setOverrides(PRESET_DEFAULTS.standard);
             setAllowedDomains(canvasUrl ? new URL(canvasUrl).hostname : "");
             setQuitPassword("");
-            setSetRandomAccessCode(true);
+            setIsEditingAccessCode(false);
             setError(null);
             setSaving(false);
+
+            // Pre-fill access code: use existing from DB/Canvas, or generate random
+            const existing = quiz.sebSettings?.accessCode;
+            setAccessCode_(existing || generateRandomCode());
         }
-    }, [open, quiz, canvasUrl]);
+    }, [open, quiz, canvasUrl, generateRandomCode]);
 
     // When preset changes, reset toggles to that preset's defaults
     const handlePresetChange = useCallback((presetId: string) => {
@@ -223,12 +242,10 @@ export function SEBConfigDialog({
         console.log("courseId:", courseId, "quizId:", quiz?.id);
 
         try {
-            // Step 1: Optionally set randomized access code on Canvas
-            let accessCodeValue: string | null = null;
-            if (setRandomAccessCode) {
-                const result = await setAccessCode(courseId, quiz.id, quiz.quizType, token);
-                accessCodeValue = result.accessCode;
-            }
+            // Step 1: Set the access code on Canvas
+            const result = await setAccessCode(courseId, quiz.id, quiz.quizType, token, accessCode);
+            const accessCodeValue = result.accessCode;
+
 
             // Step 2: Generate the .seb config file via backend
             const startURL = `${canvasUrl}/courses/${courseId}/quizzes/${quiz.id}/take`;
@@ -284,7 +301,7 @@ export function SEBConfigDialog({
                 configuredAt: new Date().toISOString(),
             };
 
-            onSaved(quiz.id, setRandomAccessCode, savedSettings);
+            onSaved(quiz.id, true, savedSettings);
             onClose();
         } catch (err) {
             console.error("SEB config save error:", err);
@@ -292,7 +309,7 @@ export function SEBConfigDialog({
         } finally {
             setSaving(false);
         }
-    }, [quiz, courseId, canvasUrl, selectedPreset, overrides, allowedDomains, quitPassword, setRandomAccessCode, onSaved, onClose]);
+    }, [quiz, courseId, canvasUrl, selectedPreset, overrides, allowedDomains, quitPassword, accessCode, onSaved, onClose]);
 
     // ── Render ───────────────────────────────────────────────────────────────
     if (!open || !quiz) return null;
@@ -468,36 +485,55 @@ export function SEBConfigDialog({
                         />
                     </div>
 
-                    {/* Access Code option */}
+                    {/* Access Code */}
                     <div className="h-px bg-border" />
-                    <label
-                        className={cn(
-                            "flex items-start gap-3 px-3 py-3 rounded-lg border cursor-pointer transition-all",
-                            setRandomAccessCode
-                                ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                                : "border-border hover:border-primary/30"
-                        )}
-                    >
-                        <input
-                            type="checkbox"
-                            checked={setRandomAccessCode}
-                            onChange={(e) => setSetRandomAccessCode(e.target.checked)}
-                            className="mt-0.5 w-4 h-4 rounded border-border accent-primary"
-                        />
-                        <div className="flex-1">
-                            <div className="flex items-center gap-1.5">
-                                <Lock className="w-3.5 h-3.5 text-foreground" />
-                                <span className="text-sm font-medium text-foreground">
-                  Set Randomized Access Code
-                </span>
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-1">
-                                Generates a random access code on Canvas and embeds it in the
-                                SEB config file. Students won't see the code — only SEB can
-                                unlock the quiz. <span className="font-medium text-foreground">Recommended.</span>
-                            </p>
+                    <div>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-2">
+                            Access Code
+                        </p>
+
+                        <p className="text-xs text-muted-foreground mb-2">
+                            This code is embedded in the SEB config file and set on Canvas.
+                            Students won't see it, only SEB can unlock the quiz.
+                        </p>
+
+                        <div className="flex items-center gap-2">
+                            {isEditingAccessCode ? (
+                                <input
+                                    ref={accessCodeInputRef}
+                                    type="text"
+                                    value={accessCode}
+                                    onChange={(e) => setAccessCode_(e.target.value)}
+                                    onBlur={() => setIsEditingAccessCode(false)}
+                                    className="flex-1 px-3 py-2 rounded-md border bg-background font-mono text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow"
+                                />
+                            ) : (
+                                <code className="flex-1 bg-secondary text-foreground px-3 py-2 rounded-md font-mono text-sm">
+                                    {accessCode}
+                                </code>
+                            )}
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                className="shrink-0"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                    if (!isEditingAccessCode) {
+                                        setIsEditingAccessCode(true);
+                                        setTimeout(() => {
+                                            accessCodeInputRef.current?.focus();
+                                            accessCodeInputRef.current?.select();
+                                        }, 0);
+                                    } else {
+                                        setIsEditingAccessCode(false);
+                                    }
+                                }}
+                                title={isEditingAccessCode ? "Done editing" : "Edit access code"}
+                            >
+                                <Pencil className="w-3.5 h-3.5" />
+                            </Button>
                         </div>
-                    </label>
+                    </div>
                 </div>
 
                 {/* Footer */}
