@@ -6,13 +6,22 @@ const { Pool } = require("pg");
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
+  idleTimeoutMillis: 20000,       // close idle connections after 20s
+  connectionTimeoutMillis: 10000,  // fail fast if can't connect in 10s
+  max: 10,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
 });
 
 // unpooled connection which is used for multi-statement transactions
 const unpooledPool = new Pool({
   connectionString: process.env.DATABASE_URL_UNPOOLED,
   ssl: { rejectUnauthorized: false },
+  idleTimeoutMillis: 20000,       // close idle connections after 20s
+  connectionTimeoutMillis: 10000,  // fail fast if can't connect in 10s
   max: 3,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
 });
 
 

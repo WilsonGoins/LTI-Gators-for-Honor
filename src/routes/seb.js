@@ -160,9 +160,9 @@ router.post('/access-code', express.json(), async (req, res) => {
       return res.status(400).json({ error: 'courseId and quizId are required' });
     }
 
-    const canvasToken = process.env.CANVAS_API_TOKEN;
+    const canvasToken = process.env.CANVAS_ACCESS_TOKEN;
     if (!canvasToken) {
-      return res.status(500).json({ error: 'Canvas API token not configured' });
+      return res.status(500).json({ error: 'Canvas access token not configured' });
     }
 
     const accessCode = crypto.randomBytes(6).toString('hex');
@@ -219,9 +219,9 @@ router.delete('/access-code', express.json(), async (req, res) => {
       return res.status(400).json({ error: 'courseId and quizId are required' });
     }
 
-    const canvasToken = process.env.CANVAS_API_TOKEN;
+    const canvasToken = process.env.CANVAS_ACCESS_TOKEN;
     if (!canvasToken) {
-      return res.status(500).json({ error: 'Canvas API token not configured' });
+      return res.status(500).json({ error: 'Canvas access token not configured' });
     }
 
     // Remove access code from Canvas

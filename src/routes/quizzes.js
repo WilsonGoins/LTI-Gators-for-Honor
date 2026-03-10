@@ -74,9 +74,9 @@ router.get('/api/courses/:courseId/quizzes', async (req, res) => {
       return res.status(401).json({ error: 'Missing authorization token' });
     }
 
-    const canvasToken = process.env.CANVAS_API_TOKEN;   // canvas access token
+    const canvasToken = process.env.CANVAS_ACCESS_TOKEN;   // canvas access token
     if (!canvasToken) {     // check it
-      return res.status(500).json({ error: 'Canvas API token not configured' });
+      return res.status(500).json({ error: 'Canvas access token not configured' });
     }
 
     // 1. Fetch from Canvas using access token
