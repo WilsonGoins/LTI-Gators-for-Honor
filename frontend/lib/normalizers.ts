@@ -27,6 +27,7 @@ export function normalizeClassicQuiz(
 
     // security-related settings
     hasAccessCode: Boolean(raw.access_code),
+    accessCode: raw.access_code || null,       
     allowedAttempts: raw.allowed_attempts ?? 1,
     shuffleQuestions: raw.shuffle_questions ?? false,
     shuffleAnswers: raw.shuffle_answers ?? false,
@@ -74,6 +75,7 @@ export function normalizeNewQuiz(
 
     // security-related settings
     hasAccessCode: Boolean(s.student_access_code),
+    accessCode: s.student_access_code || null,  
     allowedAttempts: s.allowed_attempts ?? 1,
     shuffleQuestions: s.shuffle_questions ?? false,
     shuffleAnswers: s.shuffle_answers ?? false,

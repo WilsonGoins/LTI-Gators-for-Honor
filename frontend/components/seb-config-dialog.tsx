@@ -160,6 +160,23 @@ export function SEBConfigDialog({
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    const [toast, setToast] = useState<string | null>(null);
+    const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const showToast = useCallback((message: string) => {
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+        setToast(message);
+        toastTimerRef.current = setTimeout(() => setToast(null), 3000);
+    }, []);
+
+    // Clean up toast timer on unmount
+    useEffect(() => {
+        return () => {
+            if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+        };
+    }, []);
+
+
     // Fetch presets on first open
     useEffect(() => {
         if (!open || presetsLoaded) return;
@@ -204,10 +221,11 @@ export function SEBConfigDialog({
             setQuitPassword("");
             setIsEditingAccessCode(false);
             setError(null);
+            setToast(null);
             setSaving(false);
 
             // Pre-fill access code: use existing from DB/Canvas, or generate random
-            const existing = quiz.sebSettings?.accessCode;
+            const existing = quiz.sebSettings?.accessCode || quiz.accessCode;
             setAccessCode_(existing || generateRandomCode());
         }
     }, [open, quiz, canvasUrl, generateRandomCode]);
@@ -229,6 +247,12 @@ export function SEBConfigDialog({
     // ── Save handler ─────────────────────────────────────────────────────────
     const handleSave = useCallback(async () => {
         if (!quiz) return;
+
+        // Validate access code length
+        if (accessCode.trim().length < 5) {
+            showToast("Access code must be at least 5 characters.");
+            return;
+        }
 
         setSaving(true);
         setError(null);
@@ -316,6 +340,16 @@ export function SEBConfigDialog({
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
+            {/* Toast notification */}
+            {toast && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-top-2 fade-in duration-200">
+                    <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-destructive text-destructive-foreground shadow-lg text-sm font-medium">
+                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                        {toast}
+                    </div>
+                </div>
+            )}
+
             {/* Backdrop */}
             <div
                 className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
@@ -503,12 +537,27 @@ export function SEBConfigDialog({
                                     ref={accessCodeInputRef}
                                     type="text"
                                     value={accessCode}
-                                    onChange={(e) => setAccessCode_(e.target.value)}
-                                    onBlur={() => setIsEditingAccessCode(false)}
-                                    className="flex-1 px-3 py-2 rounded-md border bg-background font-mono text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow"
+                                    onChange={(e) => {
+                                        setAccessCode_(e.target.value);     // clear error as they type
+                                        if (toast) setToast(null); 
+                                    }}
+
+                                    onBlur={() => {
+                                        setIsEditingAccessCode(false);
+                                        if (accessCode.trim().length < 5) {
+                                            showToast("Access code must be at least 5 characters.");
+                                        }
+                                    }}
+                                    className={cn(
+                                        "flex-1 px-3 py-2 rounded-md border bg-background font-mono text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow",
+                                        toast && "border-destructive focus:ring-destructive/30"
+                                    )}
                                 />
                             ) : (
-                                <code className="flex-1 bg-secondary text-foreground px-3 py-2 rounded-md font-mono text-sm">
+                                <code className={cn(
+                                    "flex-1 bg-secondary text-foreground px-3 py-2 rounded-md font-mono text-sm",
+                                    toast && "ring-1 ring-destructive border border-destructive"
+                                )}>
                                     {accessCode}
                                 </code>
                             )}
@@ -526,6 +575,9 @@ export function SEBConfigDialog({
                                         }, 0);
                                     } else {
                                         setIsEditingAccessCode(false);
+                                        if (accessCode.trim().length < 5) {
+                                            showToast("Access code must be at least 5 characters.");
+                                        }
                                     }
                                 }}
                                 title={isEditingAccessCode ? "Done editing" : "Edit access code"}
