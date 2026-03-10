@@ -651,7 +651,7 @@ export function SEBConfigDialog({
 
                 {/* Footer */}
                 <div className="flex items-center justify-end gap-2 px-5 py-3 border-t bg-muted/30">
-                    <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
+                    <Button variant="ghost" size="sm" onClick={onClose} disabled={saving} className="text-destructive hover:text-destructive hover:bg-destructive/10">
                         Cancel
                     </Button>
                     <Button
