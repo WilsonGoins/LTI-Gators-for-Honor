@@ -44,6 +44,10 @@ interface ConfigOverrides {
     urlFilterEnabled: boolean;
 }
 
+// Which field triggered the current toast error
+type ToastField = "accessCode" | "allowedDomains" | "quitPassword" | null;
+
+
 // What each preset defaults to (so toggles reset when you switch presets)
 const PRESET_DEFAULTS: Record<string, ConfigOverrides> = {
     standard: {
@@ -161,12 +165,23 @@ export function SEBConfigDialog({
     const [error, setError] = useState<string | null>(null);
 
     const [toast, setToast] = useState<string | null>(null);
+    const [toastField, setToastField] = useState<ToastField>(null);
     const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const showToast = useCallback((message: string) => {
+    const showToast = useCallback((message: string, field: ToastField = null) => {
         if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
         setToast(message);
-        toastTimerRef.current = setTimeout(() => setToast(null), 3000);
+        setToastField(field);
+        toastTimerRef.current = setTimeout(() => {
+            setToast(null);
+            setToastField(null);
+        }, 3000);
+    }, []);
+
+    const clearToast = useCallback(() => {
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+        setToast(null);
+        setToastField(null);
     }, []);
 
     // Clean up toast timer on unmount
@@ -244,13 +259,36 @@ export function SEBConfigDialog({
         []
     );
 
+    // Helper to check if allowed domains has at least one non-empty entry
+    const hasAllowedDomains = useCallback(() => {
+        return allowedDomains
+            .split(/[,\n]/)
+            .map((d) => d.trim())
+            .filter(Boolean).length > 0;
+    }, [allowedDomains]);
+
+    // Whether any conditional sub-sections are visible below the toggles
+    const hasVisibleSubFields = overrides.urlFilterEnabled || overrides.allowQuit;
+
     // ── Save handler ─────────────────────────────────────────────────────────
     const handleSave = useCallback(async () => {
         if (!quiz) return;
 
         // Validate access code length
         if (accessCode.trim().length < 5) {
-            showToast("Access code must be at least 5 characters.");
+            showToast("Access code must be at least 5 characters.", "accessCode");
+            return;
+        }
+        
+        // Validate allowed domains when URL Filtering is enabled
+        if (overrides.urlFilterEnabled && !hasAllowedDomains()) {
+            showToast("At least one allowed domain is required when URL filtering is enabled.", "allowedDomains");
+            return;
+        }
+
+        // Validate quit password when Allow Quit is enabled
+        if (overrides.allowQuit && !quitPassword.trim()) {
+            showToast("Quit password cannot be blank.", "quitPassword");
             return;
         }
 
@@ -333,7 +371,7 @@ export function SEBConfigDialog({
         } finally {
             setSaving(false);
         }
-    }, [quiz, courseId, canvasUrl, selectedPreset, overrides, allowedDomains, quitPassword, accessCode, onSaved, onClose]);
+    }, [quiz, courseId, canvasUrl, selectedPreset, overrides, allowedDomains, quitPassword, accessCode, hasAllowedDomains, onSaved, onClose]);
 
     // ── Render ───────────────────────────────────────────────────────────────
     if (!open || !quiz) return null;
@@ -472,52 +510,75 @@ export function SEBConfigDialog({
                             <ToggleRow
                                 icon={X}
                                 label="Allow Quit"
-                                description="Let students quit SEB without a password"
+                                description="Let students quit SEB with a password"
                                 checked={overrides.allowQuit}
                                 onChange={(v) => setOverride("allowQuit", v)}
                             />
                         </div>
                     </div>
 
-                    {/* Divider */}
-                    <div className="h-px bg-border" />
+                    {/* Thin divider — only shown when sub-fields are visible */}
+                    {hasVisibleSubFields && <div className="h-px bg-border" />}
 
-                    {/* Allowed Domains */}
-                    <div>
-                        <label className="text-sm font-medium text-foreground">
-                            Allowed Domains
-                        </label>
-                        <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                            Domains students can navigate to (comma or newline separated).
-                        </p>
-                        <textarea
-                            value={allowedDomains}
-                            onChange={(e) => setAllowedDomains(e.target.value)}
-                            rows={2}
-                            placeholder="canvas.ufl.edu, *.instructure.com"
-                            className="w-full px-3 py-2 rounded-md border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none transition-shadow"
-                        />
-                    </div>
+                    {/* Allowed Domains — only shown when URL Filtering is enabled */}
+                    {overrides.urlFilterEnabled && (
+                        <div>
+                            <label className="text-sm font-medium text-foreground">
+                                Allowed Domains
+                            </label>
+                            <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                                Domains students can navigate to (comma or newline separated).
+                            </p>
+                            <textarea
+                                value={allowedDomains}
+                                onChange={(e) => {
+                                    setAllowedDomains(e.target.value);
+                                    if (toast) clearToast();
+                                }}
+                                onBlur={() => {
+                                    if (!hasAllowedDomains()) {
+                                        showToast("At least one allowed domain is required when URL filtering is enabled.", "allowedDomains");
+                                    }
+                                }}
+                                rows={2}
+                                placeholder="canvas.ufl.edu, *.instructure.com"
+                                className={cn(
+                                    "w-full px-3 py-2 rounded-md border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none transition-shadow",
+                                    toastField === "allowedDomains" && "border-destructive focus:ring-destructive/30"
+                                )}
+                            />
+                        </div>
+                    )}
 
-                    {/* Quit Password */}
-                    <div>
-                        <label className="text-sm font-medium text-foreground">
-                            Quit Password{" "}
-                            <span className="font-normal text-muted-foreground">
-                (optional)
-              </span>
-                        </label>
-                        <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                            If set, students must enter this password to exit SEB.
-                        </p>
-                        <input
-                            type="text"
-                            value={quitPassword}
-                            onChange={(e) => setQuitPassword(e.target.value)}
-                            placeholder="Leave blank for no quit password"
-                            className="w-full h-9 px-3 rounded-md border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow"
-                        />
-                    </div>
+                    {/* Quit Password — only shown when Allow Quit is enabled */}
+                    {overrides.allowQuit && (
+                        <div>
+                            <label className="text-sm font-medium text-foreground">
+                                Quit Password
+                            </label>
+                            <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                                Students must enter this password to exit SEB during the exam.
+                            </p>
+                            <input
+                                type="text"
+                                value={quitPassword}
+                                onChange={(e) => {
+                                    setQuitPassword(e.target.value);
+                                    if (toast) clearToast();
+                                }}
+                                onBlur={() => {
+                                    if (!quitPassword.trim()) {
+                                        showToast("Quit password cannot be blank.", "quitPassword");
+                                    }
+                                }}
+                                placeholder="Enter a quit password"
+                                className={cn(
+                                    "w-full h-9 px-3 rounded-md border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow",
+                                    toastField === "quitPassword" && "border-destructive focus:ring-destructive/30"
+                                )}
+                            />
+                        </div>
+                    )}
 
                     {/* Access Code */}
                     <div className="h-px bg-border" />
@@ -539,24 +600,24 @@ export function SEBConfigDialog({
                                     value={accessCode}
                                     onChange={(e) => {
                                         setAccessCode_(e.target.value);     // clear error as they type
-                                        if (toast) setToast(null); 
+                                        if (toast) clearToast(); 
                                     }}
 
                                     onBlur={() => {
                                         setIsEditingAccessCode(false);
                                         if (accessCode.trim().length < 5) {
-                                            showToast("Access code must be at least 5 characters.");
+                                            showToast("Access code must be at least 5 characters.", "accessCode");
                                         }
                                     }}
                                     className={cn(
                                         "flex-1 px-3 py-2 rounded-md border bg-background font-mono text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow",
-                                        toast && "border-destructive focus:ring-destructive/30"
+                                        toastField === "accessCode" && "border-destructive focus:ring-destructive/30"
                                     )}
                                 />
                             ) : (
                                 <code className={cn(
-                                    "flex-1 bg-secondary text-foreground px-3 py-2 rounded-md font-mono text-sm",
-                                    toast && "ring-1 ring-destructive border border-destructive"
+                                    "flex-1 bg-secondary text-foreground px-3 py-2 rounded-md font-mono text-sm min-h-9",
+                                    toastField === "accessCode" && "ring-1 ring-destructive border border-destructive"
                                 )}>
                                     {accessCode}
                                 </code>
@@ -576,7 +637,7 @@ export function SEBConfigDialog({
                                     } else {
                                         setIsEditingAccessCode(false);
                                         if (accessCode.trim().length < 5) {
-                                            showToast("Access code must be at least 5 characters.");
+                                            showToast("Access code must be at least 5 characters.", "accessCode");
                                         }
                                     }
                                 }}
