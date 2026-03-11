@@ -54,9 +54,29 @@ async function syncQuizzes(courseId, rows) {
 
     const canvasQuizIds = rows.map((r) => r.quizId);
 
+    // Before deleting, find file_links for quizzes being removed
+    let deletedFileLinks = [];
+
+
     if (canvasQuizIds.length === 0) {
+      const { rows: deleted } = await client.query(
+        `SELECT file_link FROM seb_config_files
+         WHERE course_id = $1 AND file_link IS NOT NULL`,
+        [courseId]
+      );
+      deletedFileLinks = deleted.map(r => r.file_link);
+
       await client.query(`DELETE FROM quizzes WHERE course_id = $1`, [courseId]);
     } else {
+      const { rows: deleted } = await client.query(
+        `SELECT file_link FROM seb_config_files
+         WHERE course_id = $1
+           AND quiz_id != ALL($2::text[])
+           AND file_link IS NOT NULL`,
+        [courseId, canvasQuizIds]
+      );
+      deletedFileLinks = deleted.map(r => r.file_link);
+
       await client.query(
         `DELETE FROM quizzes WHERE course_id = $1 AND quiz_id != ALL($2::text[])`,
         [courseId, canvasQuizIds]
@@ -64,6 +84,7 @@ async function syncQuizzes(courseId, rows) {
     }
 
     await client.query("COMMIT");
+    return deletedFileLinks;
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;
@@ -249,7 +270,7 @@ async function saveSEBConfig(courseId, quizId, { settings, fileData, fileName, c
 // ─── Download stored .seb file ───────────────────────────────────────────────
 
 async function getSEBFile(courseId, quizId) {
-  const sql = `SELECT file_data, file_name, config_key FROM seb_config_files WHERE course_id = $1 AND quiz_id = $2`;
+  const sql = `SELECT file_data, file_name, config_key, file_link FROM seb_config_files WHERE course_id = $1 AND quiz_id = $2`;
   const { rows } = await pool.query(sql, [courseId, quizId]);
   return rows[0] ?? null;
 }
@@ -264,6 +285,13 @@ async function clearAccessCode(courseId, quizId) {
   );
 }
 
+// update the seb_config_files record with the Canvas file link after upload
+async function updateSEBFileLink(courseId, quizId, fileLink) {
+  await pool.query(
+    `UPDATE seb_config_files SET file_link = $1 WHERE course_id = $2 AND quiz_id = $3`,
+    [fileLink, courseId, quizId]
+  );
+}
 
 module.exports = {
   pool,
@@ -274,4 +302,5 @@ module.exports = {
   saveSEBConfig,
   getSEBFile,
   clearAccessCode,
+  updateSEBFileLink,
 };

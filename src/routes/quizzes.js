@@ -99,7 +99,31 @@ router.get('/api/courses/:courseId/quizzes', async (req, res) => {
     ];
 
     // 3. Sync DB: upsert current quizzes + delete stale ones
-    await syncQuizzes(courseId, syncRows);
+    const deletedFileLinks = await syncQuizzes(courseId, syncRows);
+
+    // Clean up Canvas files for deleted quizzes
+    if (deletedFileLinks.length > 0) {
+      for (const link of deletedFileLinks) {
+        try {
+          const match = link.match(/\/files\/(\d+)\//);
+          if (!match) continue;
+          const fileId = match[1];
+
+          const delRes = await fetch(`${CANVAS_URL}/api/v1/files/${fileId}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${canvasToken}` },
+          });
+
+          if (delRes.ok) {
+            console.log(`✅ Deleted Canvas file ${fileId}`);
+          } else {
+            console.warn(`⚠️ Failed to delete Canvas file ${fileId} (${delRes.status})`);
+          }
+        } catch (err) {
+          console.warn(`⚠️ Error deleting Canvas file: ${err.message}`);
+        }
+      }
+    }
 
     // 4. Fetch SEB status from our DB
     const sebStatus = await getSEBStatusByCourse(courseId);
