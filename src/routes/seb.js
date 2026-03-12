@@ -5,8 +5,9 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
+const FormData = require('form-data');
 const seb = require('../services/seb');
-const { saveSEBConfig, getSEBFile, clearAccessCode } = require('../db/client');
+const { saveSEBConfig, getSEBFile, clearAccessCode, updateSEBFileLink } = require('../db/client');
 
 const CANVAS_URL = process.env.CANVAS_URL;
 
@@ -41,11 +42,13 @@ router.get('/presets', (req, res) => {
 // ---------------------------------------------------------------------------
 
 router.post('/generate', express.json(), async (req, res) => {
+  const canvasToken = process.env.CANVAS_ACCESS_TOKEN;
+
   try {
     const {
       courseId, quizId,
       startURL, preset, allowedDomains, quitPassword, overrides,
-      accessCode,
+      accessCode, quizTitle, quizType,
     } = req.body;
 
     if (!startURL) {
@@ -66,7 +69,11 @@ router.post('/generate', express.json(), async (req, res) => {
 
     const configKey = seb.computeConfigKey(config);
     const sebFile = seb.generateSEBFile(config);
-    const filename = `seb_config_${courseId}_${quizId}_${Date.now()}.seb`;
+    const baseName = (quizTitle || `quiz_${quizId}`)
+      .replace(/\s*\(Requires SEB\)/gi, '')
+      .replace(/[^a-zA-Z0-9_\- ]/g, '')
+      .trim();
+    const filename = `${baseName} (Requires SEB) - SEB Configuration File.seb`;
 
     // Save to database
     await saveSEBConfig(courseId, quizId, {
@@ -87,7 +94,40 @@ router.post('/generate', express.json(), async (req, res) => {
       accessCode: accessCode || null,
     });
 
+    // Upload .seb file to Canvas course files
+    let fileLink = null;
+    try {
+      await deleteOldCanvasFile(courseId, quizId, canvasToken);
+
+      const folder = await getOrCreateSEBFolder(courseId, canvasToken);
+      const canvasFile = await uploadFileToFolder(folder.id, courseId, filename, sebFile, canvasToken);
+      fileLink = `${CANVAS_URL}/courses/${courseId}/files/${canvasFile.id}/download`;
+      console.log(`✅ SEB file uploaded to Canvas course ${courseId} files`);
+    } catch (uploadErr) {
+      // Log but don't fail the whole request, because the user still gets their download
+      console.error('⚠️ Failed to upload SEB file to Canvas:', uploadErr.message);
+    }
+
     console.log(`✅ SEB config saved for course ${courseId}, quiz ${quizId}`);
+
+    // and update db with the file link after it's uploaded
+    if (fileLink) {
+      try {
+        await updateSEBFileLink(courseId, quizId, fileLink);
+      } catch (dbErr) {
+        console.error('⚠️ Failed to save file link to DB:', dbErr.message);
+      }
+    }
+
+    // Update quiz title and instructions with SEB download prompt
+    if (fileLink) {
+      try {
+        await updateQuizForSEB(courseId, quizId, quizType, quizTitle || '', fileLink, canvasToken);
+        console.log(`✅ Quiz title and instructions updated for course ${courseId}, quiz ${quizId}`);
+      } catch (updateErr) {
+        console.error('⚠️ Failed to update quiz title/instructions:', updateErr.message);
+      }
+    }
 
     // Return the file as a download
     res.setHeader('Content-Type', 'application/octet-stream');
@@ -310,5 +350,213 @@ router.get('/generate-test-download', (req, res) => {
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
+// helper function to find or create the SEB folder in Canvas Files API
+async function getOrCreateSEBFolder(courseId, token) {
+  const folderName = 'SEB Configuration Files';
+  
+  // Try to find the folder by path first
+  const searchRes = await fetch(
+    `${CANVAS_URL}/api/v1/courses/${courseId}/folders/by_path/${encodeURIComponent(folderName)}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  
+  if (searchRes.ok) {
+    const folders = await searchRes.json();
+    // by_path returns an array of folders along the path; last one is ours
+    if (Array.isArray(folders) && folders.length > 0) {
+      return folders[folders.length - 1];
+    }
+  }
+  
+  // if we are here, the folder doesn't exist, so create it.
+  const rootRes = await fetch(
+    `${CANVAS_URL}/api/v1/courses/${courseId}/folders/root`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!rootRes.ok) {
+    throw new Error(`Failed to get root folder (${rootRes.status})`);
+  }
+  const rootFolder = await rootRes.json();
+  
+  const createRes = await fetch(
+    `${CANVAS_URL}/api/v1/courses/${courseId}/folders`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: folderName,
+        parent_folder_id: rootFolder.id,
+      }),
+    }
+  );
+  
+  if (!createRes.ok) {
+    const err = await createRes.text();
+    throw new Error(`Failed to create SEB folder (${createRes.status}): ${err}`);
+  }
+  
+  return createRes.json();
+}
+
+// helper to add file to folder
+async function uploadFileToFolder(folderId, courseId, fileName, fileBuffer, token) {
+  // Step 1: Tell Canvas we want to upload a file
+  const notifyRes = await fetch(
+    `${CANVAS_URL}/api/v1/courses/${courseId}/files`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: fileName,
+        parent_folder_id: folderId,
+        content_type: 'application/octet-stream',
+        size: fileBuffer.length,
+        on_duplicate: 'overwrite',   // overwrite if same quiz re-configured
+      }),
+    }
+  );
+
+  if (!notifyRes.ok) {
+    const err = await notifyRes.text();
+    throw new Error(`Canvas file notify failed (${notifyRes.status}): ${err}`);
+  }
+
+  const { upload_url, upload_params } = await notifyRes.json();
+
+  // Step 2: POST the actual file to the upload URL Canvas gave us
+  const form = new FormData();
+  for (const [key, value] of Object.entries(upload_params)) {
+    form.append(key, String(value));
+  }
+  form.append('file', fileBuffer, {
+    filename: fileName,
+    contentType: 'application/octet-stream',
+  });
+
+  const uploadRes = await fetch(upload_url, {
+    method: 'POST',
+    body: form.getBuffer(),
+    headers: form.getHeaders(),
+    redirect: 'manual',
+  });
+
+  // Step 3: Canvas may respond with 3xx redirect to confirm, or 2xx with the file object
+  if (uploadRes.status === 301 || uploadRes.status === 302 || uploadRes.status === 303) {
+    const confirmUrl = uploadRes.headers.get('Location');
+    const confirmRes = await fetch(confirmUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!confirmRes.ok) {
+      throw new Error(`Canvas file confirm failed (${confirmRes.status})`);
+    }
+    return confirmRes.json();
+  }
+
+  if (!uploadRes.ok) {
+    const err = await uploadRes.text();
+    throw new Error(`Canvas file upload failed (${uploadRes.status}): ${err}`);
+  }
+
+  return uploadRes.json();
+}
+
+// update quiz title and instructions to include SEB download link
+async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, fileLink, token) {
+  // Only append if not already tagged
+  const newTitle = currentTitle.includes('Requires SEB')
+    ? currentTitle
+    : `${currentTitle} (Requires SEB)`;
+
+  const sebInstructions = `
+    <div style="background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+      <h3 style="margin-top: 0; color: #856404;">⚠️ This exam requires Safe Exam Browser (SEB)</h3>
+      <p style="margin-bottom: 8px;">You must use Safe Exam Browser to take this exam. Please complete these steps <strong>before</strong> the exam:</p>
+      <ol style="margin-bottom: 12px;">
+        <li>If you haven't already, <a href="https://safeexambrowser.org/download_en.html" target="_blank">download and install Safe Exam Browser</a>.</li>
+        <li><a href="${fileLink}"><strong>Download the SEB Configuration File</strong></a> for this exam.</li>
+        <li>When you are ready to begin, double-click the downloaded <code>.seb</code> file to launch Safe Exam Browser.</li>
+      </ol>
+      <p style="margin: 0; font-size: 0.9em; color: #856404;">If you experience technical issues, contact your instructor before the exam deadline.</p>
+    </div>
+  `.trim();
+
+  let canvasRes;
+
+  if (quizType === 'new') {
+    // New Quizzes use `instructions` field
+    canvasRes = await fetch(
+      `${CANVAS_URL}/api/quiz/v1/courses/${courseId}/quizzes/${quizId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: newTitle,
+          instructions: sebInstructions,
+        }),
+      }
+    );
+  } else {
+    // Classic Quizzes use `description` field
+    canvasRes = await fetch(
+      `${CANVAS_URL}/api/v1/courses/${courseId}/quizzes/${quizId}`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          quiz: {
+            title: newTitle,
+            description: sebInstructions,
+          },
+        }),
+      }
+    );
+  }
+
+  if (!canvasRes.ok) {
+    const errBody = await canvasRes.text();
+    throw new Error(`Canvas quiz update failed (${canvasRes.status}): ${errBody}`);
+  }
+
+  return canvasRes.json();
+}
+
+// Delete old Canvas file using stored file_link before uploading a new one
+async function deleteOldCanvasFile(courseId, quizId, token) {
+  const oldFile = await getSEBFile(courseId, quizId);
+  if (!oldFile?.file_link) return;
+
+  const match = oldFile.file_link.match(/\/files\/(\d+)\//);
+  if (!match) return;
+
+  const fileId = match[1];
+  try {
+    const delRes = await fetch(`${CANVAS_URL}/api/v1/files/${fileId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (delRes.ok) {
+      console.log(`✅ Deleted old Canvas file ${fileId} before re-upload`);
+    } else {
+      console.warn(`⚠️ Failed to delete old Canvas file ${fileId} (${delRes.status})`);
+    }
+  } catch (err) {
+    console.warn(`⚠️ Error deleting old Canvas file: ${err.message}`);
+  }
+}
+
 
 module.exports = router;

@@ -67,6 +67,7 @@ export default function DashboardPage() {
                   sebConfigured: true,
                   sebConfiguredDate: new Date().toISOString(),
                   sebSettings: settings,
+                  title: q.title.includes('Requires SEB') ? q.title : `${q.title} (Requires SEB)`,
                 }
                 : q
         )

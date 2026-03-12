@@ -331,6 +331,8 @@ export function SEBConfigDialog({
                     quitPassword: quitPassword || null,
                     overrides,
                     accessCode: accessCodeValue,
+                    quizTitle: quiz.title,
+                    quizType: quiz.quizType,    
                 }),
             });
 
@@ -344,7 +346,11 @@ export function SEBConfigDialog({
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = `seb_${quiz.title.replace(/\s+/g, "_").toLowerCase()}_${Date.now()}.seb`;
+            const baseName = (quiz.title || `quiz_${quiz.id}`)
+                .replace(/\s*\(Requires SEB\)/gi, '')
+                .replace(/[^a-zA-Z0-9_\- ]/g, '')
+                .trim();
+            a.download = `${baseName} (Requires SEB) - SEB Configuration File.seb`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
