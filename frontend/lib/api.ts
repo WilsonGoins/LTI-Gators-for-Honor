@@ -64,12 +64,13 @@ export async function fetchQuizzes(
 }
 
 
-// sets a randomized access code on a Canvas quiz
+// sets an access code on a Canvas quiz (custom or server-generated)
 export async function setAccessCode(
   courseId: string,
   quizId: string,
   quizType: "classic" | "new",
-  token: string
+  token: string,
+  customCode?: string
 ): Promise<{ accessCode: string }> {
   const res = await fetch(`${BACKEND_URL}/seb/access-code`, {
     method: "POST",
@@ -77,7 +78,7 @@ export async function setAccessCode(
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ courseId, quizId, quizType }),
+    body: JSON.stringify({ courseId, quizId, quizType, accessCode: customCode }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Unknown error" }));

@@ -31,6 +31,7 @@ export interface Quiz {
 
   // security / access settings
   hasAccessCode: boolean;
+  accessCode?: string | null;  // only populated if SEB settings are configured or quiz on canvas has an access code
   allowedAttempts: number;       // -1 = unlimited
   shuffleQuestions: boolean;
   shuffleAnswers: boolean;
