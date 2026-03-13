@@ -366,6 +366,8 @@ export function SEBConfigDialog({
                 browserViewMode: 1,
                 urlFilterEnabled: overrides.urlFilterEnabled,
                 allowedDomains: domains,
+                accessCode: accessCodeValue,
+                quitPassword: quitPassword || undefined,
                 configuredAt: new Date().toISOString(),
             };
 

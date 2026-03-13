@@ -114,6 +114,7 @@ async function getSEBStatusByCourse(courseId) {
       s.enable_url_filter,
       s.allowed_url_patterns,
       s.access_code,
+      s.quit_password,
       s.ip_filter_enabled,
       s.allowed_ip_ranges,
       s.created_at                  AS configured_at
@@ -142,7 +143,8 @@ async function getSEBStatusByCourse(courseId) {
           browserViewMode: row.force_fullscreen ? 1 : 0,
           urlFilterEnabled: row.enable_url_filter ?? false,
           allowedDomains: row.allowed_url_patterns || [],
-          accessCode: row.access_code || undefined,
+          accessCode: row.access_code || null,
+          quitPassword: row.quit_password || null,
           configuredAt: row.configured_at ? row.configured_at.toISOString() : new Date().toISOString(),
         },
       });
@@ -177,7 +179,8 @@ async function getSEBSettings(courseId, quizId) {
     browserViewMode: row.force_fullscreen ? 1 : 0,
     urlFilterEnabled: row.enable_url_filter ?? false,
     allowedDomains: row.allowed_url_patterns || [],
-    accessCode: row.access_code || undefined,
+    accessCode: row.access_code || null,
+    quitPassword: row.quit_password || null,
     configuredAt: row.created_at ? row.created_at.toISOString() : null,
   };
 }
@@ -192,11 +195,11 @@ async function saveSEBConfig(courseId, quizId, { settings, fileData, fileName, c
   try {
     await client.query("BEGIN");
 
-    // Upsert seb_settings — map our frontend names to Wilson's column names
+    // Upsert seb_settings — map our frontend names to column names
     await client.query(`
       INSERT INTO seb_settings (
         course_id, quiz_id, preset_name,
-        force_fullscreen, allow_quit, quit_password_hash,
+        force_fullscreen, allow_quit, quit_password,
         block_screen_sharing, block_virtual_machine,
         block_clipboard, block_printing, disable_spell_check,
         enable_url_filter, allowed_url_patterns,
@@ -216,7 +219,7 @@ async function saveSEBConfig(courseId, quizId, { settings, fileData, fileName, c
         preset_name          = EXCLUDED.preset_name,
         force_fullscreen     = EXCLUDED.force_fullscreen,
         allow_quit           = EXCLUDED.allow_quit,
-        quit_password_hash   = EXCLUDED.quit_password_hash,
+        quit_password   = EXCLUDED.quit_password,
         block_screen_sharing = EXCLUDED.block_screen_sharing,
         block_virtual_machine = EXCLUDED.block_virtual_machine,
         block_clipboard      = EXCLUDED.block_clipboard,
@@ -232,7 +235,7 @@ async function saveSEBConfig(courseId, quizId, { settings, fileData, fileName, c
       courseId, quizId, settings.securityLevel,
       settings.browserViewMode === 1,                   // force_fullscreen
       settings.allowQuit,                                // allow_quit
-      settings.quitPasswordHash || null,                 // quit_password_hash
+      settings.quitPassword || null,                     // quit_password
       !settings.allowScreenSharing,                      // block_screen_sharing (inverted)
       !settings.allowVirtualMachine,                     // block_virtual_machine (inverted)
       true,                                              // block_clipboard (default secure)
