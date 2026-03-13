@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS seb_config_files (
   file_name       TEXT    NOT NULL,            -- e.g. 'Midterm_Exam_SEB_Config.seb'
   file_data       BYTEA   NOT NULL,            -- raw .seb file contents
   config_key      TEXT,                         -- SHA-256 config key hex string
+  file_link       TEXT,                         -- URL for downloading the .seb file from Canvas
 
   -- Timestamps
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -63,7 +64,7 @@ CREATE TABLE IF NOT EXISTS seb_settings (
   -- Browser controls
   force_fullscreen        BOOLEAN,
   allow_quit              BOOLEAN,
-  quit_password_hash      TEXT,       -- SHA-256 of proctor exit password
+  quit_password      TEXT,       -- proctor exit password
 
   -- System restrictions
   block_screen_sharing    BOOLEAN,

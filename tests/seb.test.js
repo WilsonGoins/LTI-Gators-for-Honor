@@ -46,15 +46,14 @@ describe('SEB Configuration Generator', () => {
       expect(config.allowSpellCheck).toBe(true);
     });
 
-    it('should include quit password hash when provided', () => {
+    it('should include quit password when provided', () => {
       const config = seb.generateConfig({
         startURL: 'http://test.com',
         preset: 'standard',
         quitPassword: 'secret123',
       });
 
-      expect(config.hashedQuitPassword).toBeDefined();
-      expect(config.hashedQuitPassword).toHaveLength(64); // SHA-256 hex
+      expect(config.quitPassword).toBe('secret123');
     });
 
     it('should build URL filter rules from allowed domains', () => {

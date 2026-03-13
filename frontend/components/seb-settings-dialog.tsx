@@ -252,22 +252,22 @@ export function SEBSettingsDialog({ quiz, open, courseId, onClose, onEdit }: SEB
                 </div>
             )}
 
-            {/* Access code */}
-            {settings.accessCode && (
+            {/* Quit password */}
+            {settings.quitPassword && (
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-2">
-                    Access Code
+                    Quit Password
                   </p>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 bg-secondary text-foreground px-3 py-2 rounded-md font-mono text-sm">
-                      {settings.accessCode}
+                      {settings.quitPassword}
                     </code>
                     <Button
                         variant="outline"
                         size="icon"
                         className="shrink-0"
                         onClick={() => {
-                            navigator.clipboard.writeText(settings.accessCode || "");
+                            navigator.clipboard.writeText(String(settings.quitPassword ?? ""));
                             showToast("Copied!");
                         }}
                     >
@@ -276,6 +276,31 @@ export function SEBSettingsDialog({ quiz, open, courseId, onClose, onEdit }: SEB
                   </div>
                 </div>
             )}
+
+            {/* Access code — always shown since it is always set */}
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-2">
+                Access Code
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 bg-secondary text-foreground px-3 py-2 rounded-md font-mono text-sm">
+                  {settings.accessCode || "—"}
+                </code>
+                {settings.accessCode && (
+                    <Button
+                        variant="outline"
+                        size="icon"
+                        className="shrink-0"
+                        onClick={() => {
+                            navigator.clipboard.writeText(String(settings.accessCode ?? ""));
+                            showToast("Copied!");
+                        }}
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </Button>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Footer */}

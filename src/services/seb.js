@@ -120,7 +120,7 @@ function getDefaultProhibitedProcesses() {
  * @param {string} options.startURL          - The Canvas quiz URL
  * @param {string} options.preset            - Security preset name (standard|high|openBook|testingCenter)
  * @param {string[]} options.allowedDomains  - Domains to whitelist in URL filter
- * @param {string} [options.quitPassword]    - Password to exit SEB (hashed)
+ * @param {string} [options.quitPassword]    - Password to exit SEB
  * @param {Object} [options.overrides]       - Manual overrides for any SEB setting
  * @returns {Object} Complete SEB configuration object
  */
@@ -157,7 +157,7 @@ function generateConfig(options) {
 
     // Quit password (if provided)
     ...(quitPassword && {
-      hashedQuitPassword: hashPassword(quitPassword),
+      quitPassword: quitPassword,
     }),
 
     // Any manual overrides take precedence
@@ -314,14 +314,6 @@ function verifyConfigKeyHash(requestURL, configKey, receivedHash) {
 }
 
 // ---------------------------------------------------------------------------
-// Password Hashing (for quit password)
-// ---------------------------------------------------------------------------
-
-function hashPassword(password) {
-  return createHash('sha256').update(password, 'utf8').digest('hex');
-}
-
-// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -331,7 +323,6 @@ module.exports = {
   generateSEBFile,
   computeConfigKey,
   verifyConfigKeyHash,
-  hashPassword,
   sortAndClean,
   SECURITY_PRESETS,
 };

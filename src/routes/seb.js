@@ -86,7 +86,7 @@ router.post('/generate', express.json(), async (req, res) => {
         browserViewMode: (overrides || {}).browserViewMode ?? 1,
         urlFilterEnabled: (overrides || {}).urlFilterEnabled ?? true,
         allowedDomains: allowedDomains || [],
-        quitPasswordHash: quitPassword ? seb.hashPassword(quitPassword) : null,
+        quitPassword: quitPassword || null,
       },
       fileData: sebFile,
       fileName: filename,
