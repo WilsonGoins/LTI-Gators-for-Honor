@@ -17,6 +17,7 @@ import { Quiz } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { BACKEND_URL, setAccessCode } from "@/lib/api";
+import { SEBChangesInfo } from "@/components/seb-changes-info";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -662,6 +663,13 @@ export function SEBConfigDialog({
                     <Button variant="ghost" size="sm" onClick={onClose} disabled={saving} className="text-destructive hover:text-destructive hover:bg-destructive/10">
                         Cancel
                     </Button>
+                    <SEBChangesInfo
+                        quizTitle={quiz.title}
+                        accessCode={accessCode}
+                        overrides={overrides}
+                        allowedDomains={allowedDomains}
+                        disabled={saving}
+                    />
                     <Button
                         variant="default"
                         size="sm"
