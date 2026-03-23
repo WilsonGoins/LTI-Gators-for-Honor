@@ -90,12 +90,12 @@ export function QuizCard({ quiz, onConfigure, onViewSettings }: QuizCardProps) {
 
               <span className="inline-flex items-center gap-1.5">
               <Award className="w-3.5 h-3.5" />
-                {quiz.pointsPossible} pts
+                {quiz.pointsPossible ?? 0} {quiz.pointsPossible === 1 ? "pt" : "pts"}
             </span>
 
               <span className="inline-flex items-center gap-1.5">
               <FileQuestion className="w-3.5 h-3.5" />
-                {quiz.questionCount} questions
+                {quiz.questionCount} {quiz.questionCount === 1 ? "question" : "questions"}
             </span>
             </div>
           </div>
