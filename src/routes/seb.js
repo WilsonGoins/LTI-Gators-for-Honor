@@ -58,9 +58,16 @@ router.post('/generate', express.json(), async (req, res) => {
       return res.status(400).json({ error: 'courseId and quizId are required' });
     }
 
+    let finalStartURL = startURL;
+    if (accessCode) {
+      const url = new URL(startURL);
+      url.searchParams.set('access_code', accessCode);
+      finalStartURL = url.toString();
+    }
+
     // Generate the configuration
     const config = seb.generateConfig({
-      startURL,
+      startURL: finalStartURL,
       preset: preset || 'standard',
       allowedDomains: allowedDomains || [],
       quitPassword: quitPassword || null,
