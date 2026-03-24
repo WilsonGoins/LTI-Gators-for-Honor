@@ -105,6 +105,6 @@ export interface SEBSettings {
   urlFilterEnabled: boolean;
   allowedDomains: string[];
   accessCode?: string;
-  quitPassword?: String;
+  quitPassword?: string;
   configuredAt: string;
 }
