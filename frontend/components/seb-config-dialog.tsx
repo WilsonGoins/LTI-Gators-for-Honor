@@ -230,21 +230,57 @@ export function SEBConfigDialog({
 
     // Reset form when a new quiz is opened
     useEffect(() => {
-        if (open && quiz) {
-            setSelectedPreset("standard");
-            setOverrides(PRESET_DEFAULTS.standard);
-            setAllowedDomains(canvasUrl ? new URL(canvasUrl).hostname : "");
-            setQuitPassword("");
+        if (!open || !quiz) return;
+
+        const loadSettings = async () => {
             setIsEditingAccessCode(false);
             setError(null);
             setToast(null);
             setSaving(false);
 
-            // Pre-fill access code: use existing from DB/Canvas, or generate random
-            const existing = quiz.sebSettings?.accessCode || quiz.accessCode;
-            setAccessCode_(existing || generateRandomCode());
-        }
-    }, [open, quiz, canvasUrl, generateRandomCode]);
+            // If quiz has SEB configured, fetch saved settings from DB
+            if (quiz.sebConfigured || quiz.sebSettings) {
+                try {
+                    const token = sessionStorage.getItem("seb_token");
+                    const res = await fetch(
+                        `${BACKEND_URL}/api/courses/${courseId}/quizzes/${quiz.id}/seb-settings`,
+                        { headers: { Authorization: `Bearer ${token}` } }
+                    );
+
+                    if (res.ok) {
+                        const s = await res.json();
+                        setSelectedPreset(s.securityLevel || "standard");
+                        setOverrides({
+                            allowQuit: s.allowQuit ?? false,
+                            allowScreenSharing: s.allowScreenSharing ?? false,
+                            allowVirtualMachine: s.allowVirtualMachine ?? false,
+                            allowSpellCheck: s.allowSpellCheck ?? false,
+                            urlFilterEnabled: s.urlFilterEnabled ?? true,
+                        });
+                        setAllowedDomains(
+                            Array.isArray(s.allowedDomains)
+                                ? s.allowedDomains.join(", ")
+                                : canvasUrl ? new URL(canvasUrl).hostname : ""
+                        );
+                        setQuitPassword(s.quitPassword || "");
+                        setAccessCode_(s.accessCode || quiz.accessCode || generateRandomCode());
+                        return;
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch SEB settings:", err);
+                }
+            }
+
+            // Fallback: new config defaults
+            setSelectedPreset("standard");
+            setOverrides(PRESET_DEFAULTS.standard);
+            setAllowedDomains(canvasUrl ? new URL(canvasUrl).hostname : "");
+            setQuitPassword("");
+            setAccessCode_(quiz.accessCode || generateRandomCode());
+        };
+
+        loadSettings();
+    }, [open, quiz, courseId, canvasUrl, generateRandomCode]);
 
     // When preset changes, reset toggles to that preset's defaults
     const handlePresetChange = useCallback((presetId: string) => {
