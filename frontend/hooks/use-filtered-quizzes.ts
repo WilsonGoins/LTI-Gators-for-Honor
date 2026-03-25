@@ -70,8 +70,7 @@ export function useFilteredQuizzes(
           cmp = a.title.localeCompare(b.title);
           break;
         case "dueAt":
-          if (!a.dueAt && !b.dueAt) cmp = 0;
-          else if (!a.dueAt) cmp = 1;
+          if (!a.dueAt) cmp = 1;
           else if (!b.dueAt) cmp = -1;
           else
             cmp =
