@@ -5,7 +5,7 @@
 // and exposes /api/context so the frontend can fetch LTI session data.
 
 const express = require('express');
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 const jwt = require('jsonwebtoken');
 const { tool, platform: platformConfig } = require('./config');
 
@@ -375,6 +375,10 @@ app.post('/lti/launch', async (req, res) => {
     `);
   }
 });
+
+// Canvas ID validation: this runs before every route and ensures we don't have bad info passed in as courseId and quizId
+const validateCanvasIds = require('./middleware/validateCanvasIDs');
+app.use('/api/courses/:courseId', validateCanvasIds);
 
 // seb routes
 const sebRoutes = require('./routes/seb');
