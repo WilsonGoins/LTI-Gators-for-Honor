@@ -78,26 +78,23 @@ export function SEBChangesInfo({
         });
     }
 
-    // Instruction text change
-    changes.push({
-        icon: BookText,
-        label: "Quiz instructions updated",
-        detail: `The assignment instructions will indicate how to launch it with SEB.`,
-    });
-
-    // Access code
-    changes.push({
-        icon: KeyRound,
-        label: "Access code set on Canvas",
-        detail: `Code "${accessCode}" will be required to take the assessment.`,
-    });
-
-    // SEB file download
-    changes.push({
-        icon: FileDown,
-        label: ".seb config file downloaded",
-        detail: `A configuration file will be saved to your device and "Canvas Files".`,
-    });
+    changes.push(
+        {
+            icon: BookText,
+            label: "Quiz instructions updated",
+            detail: `The assignment instructions will indicate how to launch it with SEB.`,
+        },
+        {
+            icon: KeyRound,
+            label: "Access code set on Canvas",
+            detail: `Code "${accessCode}" will be required to take the assessment.`,
+        },
+        {
+            icon: FileDown,
+            label: ".seb config file downloaded",
+            detail: `A configuration file will be saved to your device and "Canvas Files".`,
+        }
+);
 
 
     return (

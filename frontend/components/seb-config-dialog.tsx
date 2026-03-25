@@ -8,7 +8,6 @@ import {
     Monitor,
     Keyboard,
     Globe,
-    Lock,
     Loader2,
     AlertTriangle,
     Pencil,
@@ -157,7 +156,7 @@ export function SEBConfigDialog({
     );
     const [allowedDomains, setAllowedDomains] = useState("");
     const [quitPassword, setQuitPassword] = useState("");
-    const [accessCode, setAccessCode_] = useState("");  
+    const [accessCode, setConfigAccessCode] = useState("");  
     const [isEditingAccessCode, setIsEditingAccessCode] = useState(false);
     const accessCodeInputRef = useRef<HTMLInputElement>(null);
 
@@ -263,7 +262,7 @@ export function SEBConfigDialog({
                                 : canvasUrl ? new URL(canvasUrl).hostname : ""
                         );
                         setQuitPassword(s.quitPassword || "");
-                        setAccessCode_(s.accessCode || quiz.accessCode || generateRandomCode());
+                        setConfigAccessCode(s.accessCode || quiz.accessCode || generateRandomCode());
                         return;
                     }
                 } catch (err) {
@@ -276,7 +275,7 @@ export function SEBConfigDialog({
             setOverrides(PRESET_DEFAULTS.standard);
             setAllowedDomains(canvasUrl ? new URL(canvasUrl).hostname : "");
             setQuitPassword("");
-            setAccessCode_(quiz.accessCode || generateRandomCode());
+            setConfigAccessCode(quiz.accessCode || generateRandomCode());
         };
 
         loadSettings();
@@ -644,7 +643,7 @@ export function SEBConfigDialog({
                                     type="text"
                                     value={accessCode}
                                     onChange={(e) => {
-                                        setAccessCode_(e.target.value);     // clear error as they type
+                                        setConfigAccessCode(e.target.value);     // clear error as they type
                                         if (toast) clearToast(); 
                                     }}
 
