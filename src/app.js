@@ -215,7 +215,6 @@ app.post('/lti/login', (req, res) => {
       authUrl.searchParams.append('lti_message_hint', lti_message_hint);
     }
 
-    // console.log('Redirecting to Canvas authorize:', authUrl.toString());
     console.log('Redirecting to Canvas auth...');
     res.redirect(authUrl.toString());
   } catch (error) {
@@ -371,7 +370,6 @@ app.post('/lti/launch', async (req, res) => {
     const redirectUrl = new URL(FRONTEND_URL);
     redirectUrl.searchParams.set('token', sessionToken);
 
-    // console.log(`✅ Redirecting to frontend: ${redirectUrl.toString()}`);
     console.log('✅ Redirecting to frontend...');
     return res.redirect(redirectUrl.toString());
   } catch (error) {
