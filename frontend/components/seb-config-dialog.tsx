@@ -436,6 +436,7 @@ export function SEBConfigDialog({
             <div
                 className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
                 onClick={onClose}
+                role="presentation"
             />
 
             {/* Dialog */}
@@ -475,13 +476,13 @@ export function SEBConfigDialog({
 
                     {/* Security Preset */}
                     <div>
-                        <label className="text-sm font-medium text-foreground">
+                        <p id="security-preset-label" className="text-sm font-medium text-foreground">
                             Security Preset
-                        </label>
+                        </p>
                         <p className="text-xs text-muted-foreground mt-0.5 mb-2">
                             Choose a baseline, then customize individual settings below.
                         </p>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div role="group" aria-labelledby="security-preset-label" className="grid grid-cols-2 gap-2">
                             {presets.map((preset) => (
                                 <button
                                     key={preset.id}
