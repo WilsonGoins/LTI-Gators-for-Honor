@@ -5,7 +5,7 @@
 // and exposes /api/context so the frontend can fetch LTI session data.
 
 const express = require('express');
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 const jwt = require('jsonwebtoken');
 const { tool, platform: platformConfig } = require('./config');
 
@@ -90,6 +90,18 @@ function createSessionToken(context) {
   });
   return token;
 }
+
+
+// helper to sanitize errors before sending to frontend
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 
 // ---------------------------------------------------------------------------
 // API — Frontend fetches LTI context with the session token
@@ -203,7 +215,6 @@ app.post('/lti/login', (req, res) => {
       authUrl.searchParams.append('lti_message_hint', lti_message_hint);
     }
 
-    // console.log('Redirecting to Canvas authorize:', authUrl.toString());
     console.log('Redirecting to Canvas auth...');
     res.redirect(authUrl.toString());
   } catch (error) {
@@ -344,7 +355,7 @@ app.post('/lti/launch', async (req, res) => {
           <body style='font-family: sans-serif; padding: 40px; text-align: center;'>
             <h1>Access Denied</h1>
             <p>This tool is only available to instructors and administrators.</p>
-            <p>Your roles: ${context.roles.join(', ')}</p>
+            <p>Your roles: ${escapeHtml(context.roles.join(', '))}</p>
           </body>
         </html>
       `);
@@ -359,7 +370,6 @@ app.post('/lti/launch', async (req, res) => {
     const redirectUrl = new URL(FRONTEND_URL);
     redirectUrl.searchParams.set('token', sessionToken);
 
-    // console.log(`✅ Redirecting to frontend: ${redirectUrl.toString()}`);
     console.log('✅ Redirecting to frontend...');
     return res.redirect(redirectUrl.toString());
   } catch (error) {
@@ -368,13 +378,17 @@ app.post('/lti/launch', async (req, res) => {
       <html>
         <body style='font-family: sans-serif; padding: 40px;'>
           <h1>❌ LTI Launch Error</h1>
-          <p><strong>Error:</strong> ${error.message}</p>
+          <p><strong>Error:</strong> ${escapeHtml(error.message)}</p>
           <p>Check the tool server console for details.</p>
         </body>
       </html>
     `);
   }
 });
+
+// Canvas ID validation: this runs before every route and ensures we don't have bad info passed in as courseId and quizId
+const validateCanvasIds = require('./middleware/validateCanvasIDs');
+app.use('/api/courses/:courseId', validateCanvasIds);
 
 // seb routes
 const sebRoutes = require('./routes/seb');

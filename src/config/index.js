@@ -4,7 +4,7 @@ const config = {
   // Tool settings
   tool: {
     url: process.env.TOOL_URL || 'http://localhost:3001',
-    port: parseInt(process.env.TOOL_PORT, 10) || 3001,
+    port: Number.parseInt(process.env.TOOL_PORT, 10) || 3001,
   },
 
   // Canvas LTI Platform settings

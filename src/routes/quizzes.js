@@ -63,6 +63,45 @@ async function fetchFromCanvas(courseId, canvasToken) {
   return { classic, new: newQuizzes };
 }
 
+// helper to delete seb files from Canvas files 
+async function cleanupCanvasFiles(fileLinks, canvasToken) {
+  for (const link of fileLinks) {
+    try {
+      const match = link.match(/\/files\/(\d+)\//);
+      if (!match) continue;
+
+      const fileId = match[1];
+      const delRes = await fetch(`${CANVAS_URL}/api/v1/files/${fileId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${canvasToken}` },
+      });
+
+      if (delRes.ok) {
+        console.log(`Deleted Canvas file ${fileId}`);
+      } else {
+        console.warn(`Failed to delete Canvas file ${fileId} (${delRes.status})`);
+      }
+    } catch (err) {
+      console.warn(`Error deleting Canvas file: ${err.message}`);
+    }
+  }
+}
+
+// helper to sync rows
+function buildSyncRows(courseId, canvasData) {
+  const toRow = (quizType) => (q) => ({
+    courseId,
+    quizId: String(q.id),
+    title: q.title ?? 'Untitled Quiz',
+    quizType,
+  });
+
+  return [
+    ...(canvasData.classic ?? []).map(toRow('classic')),
+    ...(canvasData.new ?? []).map(toRow('new')),
+  ];
+}
+
 
 // get quizzes for some course id from canvas, sync with our DB and return SEB status
 router.get('/api/courses/:courseId/quizzes', async (req, res) => {
@@ -79,50 +118,13 @@ router.get('/api/courses/:courseId/quizzes', async (req, res) => {
       return res.status(500).json({ error: 'Canvas access token not configured' });
     }
 
-    // 1. Fetch from Canvas using access token
-    const canvasData = await fetchFromCanvas(courseId, canvasToken);
-
-    // 2. Build rows for sync
-    const syncRows = [
-      ...(canvasData.classic ?? []).map((q) => ({
-        courseId,
-        quizId: String(q.id),
-        title: q.title ?? 'Untitled Quiz',
-        quizType: 'classic',
-      })),
-      ...(canvasData.new ?? []).map((q) => ({
-        courseId,
-        quizId: String(q.id),
-        title: q.title ?? 'Untitled Quiz',
-        quizType: 'new',
-      })),
-    ];
-
-    // 3. Sync DB: upsert current quizzes + delete stale ones
-    const deletedFileLinks = await syncQuizzes(courseId, syncRows);
+    const canvasData = await fetchFromCanvas(courseId, canvasToken);    // 1. Fetch from Canvas using access token
+    const syncRows = buildSyncRows(courseId, canvasData);               // 2. Build rows for upsert based on Canvas data
+    const deletedFileLinks = await syncQuizzes(courseId, syncRows);     // 3. Sync DB: upsert current quizzes + delete stale ones
 
     // Clean up Canvas files for deleted quizzes
     if (deletedFileLinks.length > 0) {
-      for (const link of deletedFileLinks) {
-        try {
-          const match = link.match(/\/files\/(\d+)\//);
-          if (!match) continue;
-          const fileId = match[1];
-
-          const delRes = await fetch(`${CANVAS_URL}/api/v1/files/${fileId}`, {
-            method: 'DELETE',
-            headers: { Authorization: `Bearer ${canvasToken}` },
-          });
-
-          if (delRes.ok) {
-            console.log(`✅ Deleted Canvas file ${fileId}`);
-          } else {
-            console.warn(`⚠️ Failed to delete Canvas file ${fileId} (${delRes.status})`);
-          }
-        } catch (err) {
-          console.warn(`⚠️ Error deleting Canvas file: ${err.message}`);
-        }
-      }
+      await cleanupCanvasFiles(deletedFileLinks, canvasToken);
     }
 
     // 4. Fetch SEB status from our DB

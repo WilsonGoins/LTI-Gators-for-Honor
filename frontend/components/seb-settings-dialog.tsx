@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { X, ShieldCheck, Monitor, Globe, Key, Lock, Wifi, Copy, Download, Pencil, Loader2, Check } from "lucide-react";
+import { X, ShieldCheck, Monitor, Globe, Lock, Wifi, Copy, Download, Pencil, Loader2, Check } from "lucide-react";
 import { Quiz } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
