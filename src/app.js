@@ -355,7 +355,6 @@ app.post('/lti/launch', async (req, res) => {
           <body style='font-family: sans-serif; padding: 40px; text-align: center;'>
             <h1>Access Denied</h1>
             <p>This tool is only available to instructors and administrators.</p>
-            <p>Your roles: ${escapeHtml(context.roles.join(', '))}</p>
           </body>
         </html>
       `);
@@ -378,7 +377,7 @@ app.post('/lti/launch', async (req, res) => {
       <html>
         <body style='font-family: sans-serif; padding: 40px;'>
           <h1>❌ LTI Launch Error</h1>
-          <p><strong>Error:</strong> ${escapeHtml(error.message)}</p>
+          <p>Something went wrong during the LTI launch.</p>
           <p>Check the tool server console for details.</p>
         </body>
       </html>
