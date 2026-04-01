@@ -1,6 +1,7 @@
 // SEB configuration generation and validation logic
 
 const { createHash } = require('crypto');
+const zlib = require('zlib');
 const { build } = require('plist');
 
 // Security Presets which map to the setup wizard's dropdown
@@ -126,45 +127,42 @@ function getDefaultProhibitedProcesses() {
  */
 function generateConfig(options) {
   const {
-    startURL,
+    gateBaseURL = process.env.GATE_BASE_URL || "https://uf-seb-research.vercel.app/seb", // UPDATED .env VAR BASE_URL FOR GATE
+    courseId,
+    quizId,
     preset = 'standard',
     allowedDomains = [],
     quitPassword = null,
     overrides = {},
   } = options;
 
-  if (!startURL) {
-    throw new Error('startURL is required');
+  if (!gateBaseURL || !courseId || !quizId) {
+    throw new Error('gateBaseURL, courseId, and quizId are required');
   }
 
-  // Start with the preset settings
   const presetConfig = SECURITY_PRESETS[preset];
   if (!presetConfig) {
     throw new Error(`Unknown preset: ${preset}. Available: ${Object.keys(SECURITY_PRESETS).join(', ')}`);
   }
 
-  // Build the full configuration
+  // startURL points to YOUR gate, not Canvas directly
+  const startURL = `${gateBaseURL}/gate/${courseId}/${quizId}`;
+
+  let gateDomain;
+  try { gateDomain = new URL(gateBaseURL).host; } catch { gateDomain = null; }
+  const allDomains = [...allowedDomains];
+  if (gateDomain && !allDomains.includes(gateDomain)) {
+    allDomains.push(gateDomain);
+  }
+
   const config = {
-    // Core settings
-    startURL: startURL,
+    startURL,
     startURLAllowDeepLink: true,
-
-    // Apply preset
     ...presetConfig.settings,
-
-    // Build URL filter rules
-    URLFilterRules: buildURLFilterRules(allowedDomains),
-
-    // Quit password (if provided)
-    ...(quitPassword && {
-      quitPassword: quitPassword,
-    }),
-
-    // Any manual overrides take precedence
+    URLFilterRules: buildURLFilterRules(allDomains),
+    ...(quitPassword && { quitPassword }),
     ...overrides,
-
-    // Metadata
-    originatorVersion: 'Canvas SEB LTI Tool 0.1.0',
+    originatorVersion: 'Gators for Honor LTI 0.1.0',
   };
 
   return config;
@@ -223,10 +221,11 @@ function generateSEBFile(config) {
   const xml = configToXML(config);
   const xmlBuffer = Buffer.from(xml, 'utf8');
 
-  // plnd prefix = plain data (unencrypted, uncompressed)
-  // Format: 4 bytes prefix + XML data
+  // SEB file format: plnd prefix + gzip-compressed XML plist
+  // Reference: https://safeexambrowser.org/developer/seb-file-format.html
+  const compressed = zlib.gzipSync(xmlBuffer);
   const prefix = Buffer.from('plnd', 'utf8');
-  return Buffer.concat([prefix, xmlBuffer]);
+  return Buffer.concat([prefix, compressed]);
 }
 
 // ---------------------------------------------------------------------------
