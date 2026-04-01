@@ -28,11 +28,15 @@ router.get('/presets', (req, res) => {
 // POST /seb/generate
 // Generates a .seb file, saves it + settings to the DB, and returns it.
 //
+// The .seb startURL now points to our gate (/gate/:courseId/:quizId) instead
+// of directly to Canvas. The gate validates the SEB config key hash header
+// and redirects to the Canvas quiz URL with the access code appended.
+//
 // Body:
 //   {
 //     courseId: "1",
 //     quizId: "5",
-//     startURL: "http://canvas.docker/courses/1/quizzes/5/take",
+//     canvasQuizURL: "http://canvas.docker/courses/1/quizzes/5/take",
 //     preset: "standard",
 //     allowedDomains: ["canvas.docker"],
 //     quitPassword: "optional",
@@ -47,27 +51,21 @@ router.post('/generate', express.json(), async (req, res) => {
   try {
     const {
       courseId, quizId,
-      startURL, preset, allowedDomains, quitPassword, overrides,
+      canvasQuizURL, preset, allowedDomains, quitPassword, overrides,
       accessCode, quizTitle, quizType,
     } = req.body;
 
-    if (!startURL) {
-      return res.status(400).json({ error: 'startURL is required' });
-    }
     if (!courseId || !quizId) {
       return res.status(400).json({ error: 'courseId and quizId are required' });
     }
-
-    let finalStartURL = startURL;
-    if (accessCode) {
-      const url = new URL(startURL);
-      url.searchParams.set('access_code', accessCode);
-      finalStartURL = url.toString();
+    if (!canvasQuizURL) {
+      return res.status(400).json({ error: 'canvasQuizURL is required' });
     }
 
-    // Generate the configuration
+    // Generate the configuration — startURL is the gate, built internally
     const config = seb.generateConfig({
-      startURL: finalStartURL,
+      courseId,
+      quizId,
       preset: preset || 'standard',
       allowedDomains: allowedDomains || [],
       quitPassword: quitPassword || null,
@@ -82,7 +80,7 @@ router.post('/generate', express.json(), async (req, res) => {
       .trim();
     const filename = `${baseName} (Requires SEB) - SEB Configuration File.seb`;
 
-    // Save to database
+    // Save to database (now includes canvasQuizURL for gate redirect)
     await saveSEBConfig(courseId, quizId, {
       settings: {
         securityLevel: preset || 'standard',
@@ -99,6 +97,7 @@ router.post('/generate', express.json(), async (req, res) => {
       fileName: filename,
       configKey,
       accessCode: accessCode || null,
+      canvasQuizURL,
     });
 
     // Upload .seb file to Canvas course files
@@ -111,13 +110,12 @@ router.post('/generate', express.json(), async (req, res) => {
       fileLink = `${CANVAS_URL}/courses/${courseId}/files/${canvasFile.id}/download`;
       console.log(`✅ SEB file uploaded to Canvas course ${courseId} files`);
     } catch (uploadErr) {
-      // Log but don't fail the whole request, because the user still gets their download
       console.error('⚠️ Failed to upload SEB file to Canvas:', uploadErr.message);
     }
 
     console.log(`✅ SEB config saved for course ${courseId}, quiz ${quizId}`);
 
-    // and update db with the file link after it's uploaded
+    // Update db with the file link after it's uploaded
     if (fileLink) {
       try {
         await updateSEBFileLink(courseId, quizId, fileLink);
@@ -177,10 +175,11 @@ router.get('/download/:courseId/:quizId', async (req, res) => {
 
 router.post('/config-key', express.json(), (req, res) => {
   try {
-    const { startURL, preset, allowedDomains, quitPassword, overrides } = req.body;
+    const { courseId, quizId, preset, allowedDomains, quitPassword, overrides } = req.body;
 
     const config = seb.generateConfig({
-      startURL: startURL || 'http://placeholder.url',
+      courseId: courseId || 'preview',
+      quizId: quizId || 'preview',
       preset: preset || 'standard',
       allowedDomains: allowedDomains || [],
       quitPassword: quitPassword || null,
@@ -314,13 +313,98 @@ router.delete('/access-code', express.json(), async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Test endpoints (unchanged)
+// GET /gate/:courseId/:quizId
+// SEB Config Key validation gate.
+//
+// When SEB opens the .seb file, it requests this URL and attaches the
+// x-safeexambrowser-configkeyhash header automatically. We verify that hash
+// against the config key stored in the DB. If valid, we 302 redirect to the
+// Canvas quiz URL with the access code appended. If invalid or missing, we
+// show an error page.
+//
+// NOTE: If this router is mounted at /seb (app.use('/seb', router)), the
+// full path becomes /seb/gate/:courseId/:quizId. Make sure the gateBaseURL
+// in services/seb.js matches (e.g. "https://yourdomain.com/seb").
+// ---------------------------------------------------------------------------
+
+router.get('/gate/:courseId/:quizId', async (req, res) => {
+  const { courseId, quizId } = req.params;
+
+  // 1. Must have SEB config key hash header
+  const configKeyHash = req.headers['x-safeexambrowser-configkeyhash'];
+  if (!configKeyHash) {
+    return res.status(403).send(`
+      <html>
+      <head><title>SEB Required</title></head>
+      <body style="font-family:system-ui,sans-serif;max-width:480px;margin:60px auto;text-align:center;">
+        <h2>Safe Exam Browser Required</h2>
+        <p>This exam must be opened using Safe Exam Browser.</p>
+        <p>Please download and open the <code>.seb</code> configuration file provided by your instructor.</p>
+      </body>
+      </html>
+    `);
+  }
+
+  // 2. Look up config from DB
+  let file;
+  try {
+    file = await getSEBFile(courseId, quizId);
+  } catch (err) {
+    console.error('Gate DB error:', err);
+    return res.status(500).send('Internal server error.');
+  }
+
+  if (!file || !file.config_key) {
+    return res.status(404).send('No SEB configuration found for this quiz.');
+  }
+
+  // 3. Reconstruct the request URL as SEB sees it
+  //    Behind a reverse proxy (Vercel, Render, etc.) req.protocol and
+  //    req.get('host') may not match what SEB actually requested.
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.get('host');
+  const requestURL = `${proto}://${host}${req.originalUrl}`;
+
+  // 4. Verify config key hash: SHA256(requestURL + configKey) === header
+  const isValid = seb.verifyConfigKeyHash(requestURL, file.config_key, configKeyHash);
+
+  if (!isValid) {
+    console.log(`Gate rejected: CK mismatch for course ${courseId} quiz ${quizId}`);
+    return res.status(403).send(`
+      <html>
+      <head><title>Invalid Configuration</title></head>
+      <body style="font-family:system-ui,sans-serif;max-width:480px;margin:60px auto;text-align:center;">
+        <h2>Invalid SEB Configuration</h2>
+        <p>Your configuration file doesn't match what's registered for this quiz.</p>
+        <p>Please re-download the latest <code>.seb</code> file from Canvas and try again.</p>
+      </body>
+      </html>
+    `);
+  }
+
+  // 5. Build redirect URL with access code
+  if (!file.canvas_quiz_url) {
+    return res.status(500).send('Quiz URL not configured. Contact your instructor.');
+  }
+
+  const redirectURL = new URL(file.canvas_quiz_url);
+  if (file.access_code) {
+    redirectURL.searchParams.set('access_code', file.access_code);
+  }
+
+  console.log(`Gate passed: course ${courseId} quiz ${quizId} -> redirecting`);
+  return res.redirect(redirectURL.toString());
+});
+
+// ---------------------------------------------------------------------------
+// Test endpoints
 // ---------------------------------------------------------------------------
 
 router.get('/generate-test', (req, res) => {
   try {
     const config = seb.generateConfig({
-      startURL: 'http://canvas.example.edu/courses/1/quizzes/1/take',
+      courseId: '1',
+      quizId: '1',
       preset: 'standard',
       allowedDomains: ['canvas.example.edu'],
     });
@@ -344,7 +428,8 @@ router.get('/generate-test', (req, res) => {
 
 router.get('/generate-test-download', (req, res) => {
   const config = seb.generateConfig({
-    startURL: 'http://canvas.example.edu/courses/1/quizzes/1/take',
+    courseId: '1',
+    quizId: '1',
     preset: 'standard',
     allowedDomains: ['canvas.example.edu'],
   });
@@ -370,13 +455,11 @@ async function getOrCreateSEBFolder(courseId, token) {
   
   if (searchRes.ok) {
     const folders = await searchRes.json();
-    // by_path returns an array of folders along the path; last one is ours
     if (Array.isArray(folders) && folders.length > 0) {
       return folders[folders.length - 1];
     }
   }
   
-  // if we are here, the folder doesn't exist, so create it.
   const rootRes = await fetch(
     `${CANVAS_URL}/api/v1/courses/${courseId}/folders/root`,
     { headers: { Authorization: `Bearer ${token}` } }
@@ -411,7 +494,6 @@ async function getOrCreateSEBFolder(courseId, token) {
 
 // helper to add file to folder
 async function uploadFileToFolder(folderId, courseId, fileName, fileBuffer, token) {
-  // Step 1: Tell Canvas we want to upload a file
   const notifyRes = await fetch(
     `${CANVAS_URL}/api/v1/courses/${courseId}/files`,
     {
@@ -425,7 +507,7 @@ async function uploadFileToFolder(folderId, courseId, fileName, fileBuffer, toke
         parent_folder_id: folderId,
         content_type: 'application/octet-stream',
         size: fileBuffer.length,
-        on_duplicate: 'overwrite',   // overwrite if same quiz re-configured
+        on_duplicate: 'overwrite',
       }),
     }
   );
@@ -437,7 +519,6 @@ async function uploadFileToFolder(folderId, courseId, fileName, fileBuffer, toke
 
   const { upload_url, upload_params } = await notifyRes.json();
 
-  // Step 2: POST the actual file to the upload URL Canvas gave us
   const form = new FormData();
   for (const [key, value] of Object.entries(upload_params)) {
     form.append(key, String(value));
@@ -454,7 +535,6 @@ async function uploadFileToFolder(folderId, courseId, fileName, fileBuffer, toke
     redirect: 'manual',
   });
 
-  // Step 3: Canvas may respond with 3xx redirect to confirm, or 2xx with the file object
   if (uploadRes.status === 301 || uploadRes.status === 302 || uploadRes.status === 303) {
     const confirmUrl = uploadRes.headers.get('Location');
     const confirmRes = await fetch(confirmUrl, {
@@ -477,7 +557,6 @@ async function uploadFileToFolder(folderId, courseId, fileName, fileBuffer, toke
 
 // update quiz title and instructions to include SEB download link
 async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, fileLink, token) {
-  // Only append if not already tagged
   const newTitle = currentTitle.includes('Requires SEB')
     ? currentTitle
     : `${currentTitle} (Requires SEB)`;
@@ -498,7 +577,6 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, fileLi
   let canvasRes;
 
   if (quizType === 'new') {
-    // New Quizzes use `instructions` field
     canvasRes = await fetch(
       `${CANVAS_URL}/api/quiz/v1/courses/${courseId}/quizzes/${quizId}`,
       {
@@ -514,7 +592,6 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, fileLi
       }
     );
   } else {
-    // Classic Quizzes use `description` field
     canvasRes = await fetch(
       `${CANVAS_URL}/api/v1/courses/${courseId}/quizzes/${quizId}`,
       {

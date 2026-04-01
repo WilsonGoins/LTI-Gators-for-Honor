@@ -225,7 +225,7 @@ async function getSEBSettings(courseId, quizId) {
 // ─── Save SEB Config (settings + binary file) with retry ─────────────────────
 // Called when the instructor clicks "Save & Download .seb" in the config dialog.
 
-async function saveSEBConfig(courseId, quizId, { settings, fileData, fileName, configKey, accessCode }, retries = 2) {
+async function saveSEBConfig(courseId, quizId, { settings, fileData, fileName, configKey, accessCode, canvasQuizURL }, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     const client = await unpooledPool.connect();
 
@@ -287,15 +287,16 @@ async function saveSEBConfig(courseId, quizId, { settings, fileData, fileName, c
 
       // Upsert seb_config_files
       await client.query(`
-        INSERT INTO seb_config_files (course_id, quiz_id, file_name, file_data, config_key, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, now(), now())
+        INSERT INTO seb_config_files (course_id, quiz_id, file_name, file_data, config_key, canvas_quiz_url, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, now(), now())
         ON CONFLICT (course_id, quiz_id)
         DO UPDATE SET
-          file_name  = EXCLUDED.file_name,
-          file_data  = EXCLUDED.file_data,
-          config_key = EXCLUDED.config_key,
-          updated_at = now()
-      `, [courseId, quizId, fileName, fileData, configKey]);
+          file_name       = EXCLUDED.file_name,
+          file_data       = EXCLUDED.file_data,
+          config_key      = EXCLUDED.config_key,
+          canvas_quiz_url = EXCLUDED.canvas_quiz_url,
+          updated_at      = now()
+      `, [courseId, quizId, fileName, fileData, configKey, canvasQuizURL || null]);
 
       await client.query("COMMIT");
       return; // success — exit the retry loop
@@ -318,7 +319,19 @@ async function saveSEBConfig(courseId, quizId, { settings, fileData, fileName, c
 // ─── Download stored .seb file ───────────────────────────────────────────────
 
 async function getSEBFile(courseId, quizId) {
-  const sql = `SELECT file_data, file_name, config_key, file_link FROM seb_config_files WHERE course_id = $1 AND quiz_id = $2`;
+  const sql = `
+    SELECT
+      f.file_data,
+      f.file_name,
+      f.config_key,
+      f.file_link,
+      f.canvas_quiz_url,
+      s.access_code
+    FROM seb_config_files f
+    LEFT JOIN seb_settings s
+      ON s.course_id = f.course_id AND s.quiz_id = f.quiz_id
+    WHERE f.course_id = $1 AND f.quiz_id = $2
+  `;
   const { rows } = await pool.query(sql, [courseId, quizId]);
   return rows[0] ?? null;
 }

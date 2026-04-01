@@ -346,7 +346,7 @@ export function SEBConfigDialog({
 
 
             // Step 2: Generate the .seb config file via backend
-            const startURL = `${canvasUrl}/courses/${courseId}/quizzes/${quiz.id}/take`;
+            const canvasQuizURL = `${canvasUrl}/courses/${courseId}/quizzes/${quiz.id}/take`;
             const domains = allowedDomains
                 .split(/[,\n]/)
                 .map((d) => d.trim())
@@ -361,7 +361,7 @@ export function SEBConfigDialog({
                 body: JSON.stringify({
                     courseId,
                     quizId: quiz.id,
-                    startURL,
+                    canvasQuizURL,
                     preset: selectedPreset,
                     allowedDomains: domains,
                     quitPassword: quitPassword || null,
@@ -633,8 +633,8 @@ export function SEBConfigDialog({
                         </p>
 
                         <p className="text-xs text-muted-foreground mb-2">
-                            This code is embedded in the SEB config file and set on Canvas.
-                            Students won't see it, only SEB can unlock the quiz.
+                            This code is set on Canvas and delivered automatically when SEB
+                            validates with our server. Students never see it directly.
                         </p>
 
                         <div className="flex items-center gap-2">
