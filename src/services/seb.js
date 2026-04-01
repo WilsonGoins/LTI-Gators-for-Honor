@@ -127,7 +127,7 @@ function getDefaultProhibitedProcesses() {
  */
 function generateConfig(options) {
   const {
-    gateBaseURL = process.env.GATE_BASE_URL || "https://uf-seb-research.vercel.app/seb", // UPDATED .env VAR BASE_URL FOR GATE
+    gateBaseURL = process.env.GATE_BASE_URL,
     courseId,
     quizId,
     preset = 'standard',

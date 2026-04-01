@@ -365,11 +365,6 @@ router.get('/gate/:courseId/:quizId', async (req, res) => {
   const host = req.headers['x-forwarded-host'] || req.get('host');
   const requestURL = `${proto}://${host}${req.originalUrl}`;
 
-  // Debug logging — remove once verified in production
-  console.log('[Gate] requestURL:', requestURL);
-  console.log('[Gate] stored configKey:', file.config_key);
-  console.log('[Gate] received hash:', configKeyHash);
-
   // 4. Verify config key hash: SHA256(requestURL + configKey) === header
   const isValid = seb.verifyConfigKeyHash(requestURL, file.config_key, configKeyHash);
 
