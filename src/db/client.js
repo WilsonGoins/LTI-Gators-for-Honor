@@ -112,6 +112,8 @@ async function syncQuizzes(courseId, rows, retries = 2) {
         deletedFileLinks = deleted.map(r => r.file_link);
 
         await client.query(`DELETE FROM quizzes WHERE course_id = $1`, [courseId]);
+        await client.query(`DELETE FROM seb_config_files WHERE course_id = $1`, [courseId]);
+        await client.query(`DELETE FROM seb_settings WHERE course_id = $1`, [courseId]);
       } else {
         const { rows: deleted } = await client.query(
           `SELECT file_link FROM seb_config_files
@@ -124,6 +126,14 @@ async function syncQuizzes(courseId, rows, retries = 2) {
 
         await client.query(
           `DELETE FROM quizzes WHERE course_id = $1 AND quiz_id != ALL($2::text[])`,
+          [courseId, canvasQuizIds]
+        );
+        await client.query(
+          `DELETE FROM seb_config_files WHERE course_id = $1 AND quiz_id != ALL($2::text[])`,
+          [courseId, canvasQuizIds]
+        );
+        await client.query(
+          `DELETE FROM seb_settings WHERE course_id = $1 AND quiz_id != ALL($2::text[])`,
           [courseId, canvasQuizIds]
         );
       }

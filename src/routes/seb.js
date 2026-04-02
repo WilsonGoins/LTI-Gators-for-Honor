@@ -128,16 +128,6 @@ router.post('/generate', express.json(), async (req, res) => {
       }
     }
 
-    // Update quiz title and instructions with SEB download prompt
-    if (fileLink) {
-      try {
-        await updateQuizForSEB(courseId, quizId, quizType, quizTitle || '', fileLink, canvasToken);
-        console.log(`✅ Quiz title and instructions updated for course ${courseId}, quiz ${quizId}`);
-      } catch (updateErr) {
-        console.error('⚠️ Failed to update quiz title/instructions:', updateErr.message);
-      }
-    }
-
     // Return the file as a download
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
