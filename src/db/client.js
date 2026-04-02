@@ -53,6 +53,22 @@ unpooledPool.on("error", (err) => {
 });
 
 
+// Query with retry for all database transactions
+async function queryWithRetry(sql, params, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await pool.query(sql, params);
+    } catch (err) {
+      if (isConnectionError(err) && attempt < retries) {
+        console.warn(`Query connection error (attempt ${attempt + 1}/${retries}), retrying...`);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+
 // ─── syncQuizzes (with retry) ───────────────────────────────────────────────
 // Upserts all quizzes returned from Canvas and deletes any that are no longer there.
 async function syncQuizzes(courseId, rows, retries = 2) {
@@ -161,7 +177,7 @@ async function getSEBStatusByCourse(courseId) {
     WHERE q.course_id = $1
   `;
 
-  const { rows } = await pool.query(sql, [courseId]);
+  const { rows } = await queryWithRetry(sql, [courseId]);
 
   const map = new Map();
   for (const row of rows) {
@@ -202,7 +218,7 @@ async function getSEBStatusByCourse(courseId) {
 
 async function getSEBSettings(courseId, quizId) {
   const sql = `SELECT * FROM seb_settings WHERE course_id = $1 AND quiz_id = $2`;
-  const { rows } = await pool.query(sql, [courseId, quizId]);
+  const { rows } = await queryWithRetry(sql, [courseId, quizId]);
   if (!rows[0]) return null;
 
   const row = rows[0];
@@ -332,7 +348,7 @@ async function getSEBFile(courseId, quizId) {
       ON s.course_id = f.course_id AND s.quiz_id = f.quiz_id
     WHERE f.course_id = $1 AND f.quiz_id = $2
   `;
-  const { rows } = await pool.query(sql, [courseId, quizId]);
+  const { rows } = await queryWithRetry(sql, [courseId, quizId]);
   return rows[0] ?? null;
 }
 
@@ -340,7 +356,7 @@ async function getSEBFile(courseId, quizId) {
 // ─── Clear access code ──────────────────────────────────────────────────────
 
 async function clearAccessCode(courseId, quizId) {
-  await pool.query(
+  await queryWithRetry(
     `UPDATE seb_settings SET access_code = NULL, updated_at = now() WHERE course_id = $1 AND quiz_id = $2`,
     [courseId, quizId]
   );
@@ -348,7 +364,7 @@ async function clearAccessCode(courseId, quizId) {
 
 // update the seb_config_files record with the Canvas file link after upload
 async function updateSEBFileLink(courseId, quizId, fileLink) {
-  await pool.query(
+  await queryWithRetry(
     `UPDATE seb_config_files SET file_link = $1 WHERE course_id = $2 AND quiz_id = $3`,
     [fileLink, courseId, quizId]
   );
