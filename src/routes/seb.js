@@ -7,7 +7,8 @@ const crypto = require('crypto');
 const router = express.Router();
 const FormData = require('form-data');
 const seb = require('../services/seb');
-const { saveSEBConfig, getSEBFile, clearAccessCode, updateSEBFileLink } = require('../db/client');
+const CanvasAPI = require('../services/canvas');
+const { saveSEBConfig, getSEBFile, clearAccessCode } = require('../db/client');
 
 const CANVAS_URL = process.env.CANVAS_URL;
 
@@ -115,12 +116,15 @@ router.post('/generate', express.json(), async (req, res) => {
 
     console.log(`✅ SEB config saved for course ${courseId}, quiz ${quizId}`);
 
-    // Update db with the file link after it's uploaded
+    // Update quiz title and instructions with SEB download prompt
     if (fileLink) {
       try {
-        await updateSEBFileLink(courseId, quizId, fileLink);
-      } catch (dbErr) {
-        console.error('⚠️ Failed to save file link to DB:', dbErr.message);
+        const canvasAPI = new CanvasAPI(undefined, canvasToken);
+        const currentInstructions = await canvasAPI.getQuizInstructions(courseId, quizId, quizType);
+        await updateQuizForSEB(courseId, quizId, quizType, quizTitle || '', currentInstructions, fileLink, canvasToken);
+        console.log(`✅ Quiz title and instructions updated for course ${courseId}, quiz ${quizId}`);
+      } catch (updateErr) {
+        console.error('⚠️ Failed to update quiz title/instructions:', updateErr.message);
       }
     }
 
@@ -556,7 +560,7 @@ async function uploadFileToFolder(folderId, courseId, fileName, fileBuffer, toke
 }
 
 // update quiz title and instructions to include SEB download link
-async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, fileLink, token) {
+async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, currentInstructions,fileLink, token) {
   const newTitle = currentTitle.includes('Requires SEB')
     ? currentTitle
     : `${currentTitle} (Requires SEB)`;
@@ -587,7 +591,9 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, fileLi
         },
         body: JSON.stringify({
           title: newTitle,
-          instructions: sebInstructions,
+          instructions: currentInstructions
+            ? `${sebInstructions}\n${currentInstructions}`
+            : sebInstructions,
         }),
       }
     );
@@ -603,7 +609,9 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, fileLi
         body: JSON.stringify({
           quiz: {
             title: newTitle,
-            description: sebInstructions,
+            description: currentInstructions
+              ? `${sebInstructions}\n${currentInstructions}`
+              : sebInstructions,
           },
         }),
       }
