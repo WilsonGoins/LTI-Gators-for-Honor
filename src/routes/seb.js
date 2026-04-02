@@ -580,6 +580,14 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, curren
 
   let canvasRes;
 
+  const cleanedInstructions = currentInstructions
+    ? currentInstructions.replace(/<div style="background-color: #fff3cd;[\s\S]*?<\/div>\s*/i, '').trim()
+    : '';
+
+  const finalInstructions = cleanedInstructions
+    ? `${sebInstructions}\n${cleanedInstructions}`
+    : sebInstructions;
+
   if (quizType === 'new') {
     canvasRes = await fetch(
       `${CANVAS_URL}/api/quiz/v1/courses/${courseId}/quizzes/${quizId}`,
@@ -591,9 +599,7 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, curren
         },
         body: JSON.stringify({
           title: newTitle,
-          instructions: currentInstructions
-            ? `${sebInstructions}\n${currentInstructions}`
-            : sebInstructions,
+          instructions: finalInstructions,
         }),
       }
     );
@@ -609,9 +615,7 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, curren
         body: JSON.stringify({
           quiz: {
             title: newTitle,
-            description: currentInstructions
-              ? `${sebInstructions}\n${currentInstructions}`
-              : sebInstructions,
+            description: finalInstructions,
           },
         }),
       }
