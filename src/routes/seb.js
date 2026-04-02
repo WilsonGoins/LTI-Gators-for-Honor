@@ -8,7 +8,7 @@ const router = express.Router();
 const FormData = require('form-data');
 const seb = require('../services/seb');
 const CanvasAPI = require('../services/canvas');
-const { saveSEBConfig, getSEBFile, clearAccessCode } = require('../db/client');
+const { saveSEBConfig, getSEBFile, clearAccessCode, updateSEBFileLink } = require('../db/client');
 
 const CANVAS_URL = process.env.CANVAS_URL;
 
@@ -115,6 +115,15 @@ router.post('/generate', express.json(), async (req, res) => {
     }
 
     console.log(`✅ SEB config saved for course ${courseId}, quiz ${quizId}`);
+
+    // Save the Canvas file link to DB so cleanup can find it later
+    if (fileLink) {
+      try {
+        await updateSEBFileLink(courseId, quizId, fileLink);
+      } catch (dbErr) {
+        console.error('⚠️ Failed to save file link to DB:', dbErr.message);
+      }
+    }
 
     // Update quiz title and instructions with SEB download prompt
     if (fileLink) {
