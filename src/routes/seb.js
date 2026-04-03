@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const router = express.Router();
 const FormData = require('form-data');
 const seb = require('../services/seb');
+const CanvasAPI = require('../services/canvas');
 const { saveSEBConfig, getSEBFile, clearAccessCode, updateSEBFileLink } = require('../db/client');
 
 const CANVAS_URL = process.env.CANVAS_URL;
@@ -115,7 +116,7 @@ router.post('/generate', express.json(), async (req, res) => {
 
     console.log(`✅ SEB config saved for course ${courseId}, quiz ${quizId}`);
 
-    // Update db with the file link after it's uploaded
+    // Save the Canvas file link to DB so cleanup can find it later
     if (fileLink) {
       try {
         await updateSEBFileLink(courseId, quizId, fileLink);
@@ -127,7 +128,9 @@ router.post('/generate', express.json(), async (req, res) => {
     // Update quiz title and instructions with SEB download prompt
     if (fileLink) {
       try {
-        await updateQuizForSEB(courseId, quizId, quizType, quizTitle || '', fileLink, canvasToken);
+        const canvasAPI = new CanvasAPI(undefined, canvasToken);
+        const currentInstructions = await canvasAPI.getQuizInstructions(courseId, quizId, quizType);
+        await updateQuizForSEB(courseId, quizId, quizType, quizTitle || '', currentInstructions, fileLink, canvasToken);
         console.log(`✅ Quiz title and instructions updated for course ${courseId}, quiz ${quizId}`);
       } catch (updateErr) {
         console.error('⚠️ Failed to update quiz title/instructions:', updateErr.message);
@@ -556,7 +559,7 @@ async function uploadFileToFolder(folderId, courseId, fileName, fileBuffer, toke
 }
 
 // update quiz title and instructions to include SEB download link
-async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, fileLink, token) {
+async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, currentInstructions,fileLink, token) {
   const newTitle = currentTitle.includes('Requires SEB')
     ? currentTitle
     : `${currentTitle} (Requires SEB)`;
@@ -576,6 +579,14 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, fileLi
 
   let canvasRes;
 
+  const cleanedInstructions = currentInstructions
+    ? currentInstructions.replace(/<div style="background-color: #fff3cd;[\s\S]*?<\/div>\s*/i, '').trim()
+    : '';
+
+  const finalInstructions = cleanedInstructions
+    ? `${sebInstructions}\n${cleanedInstructions}`
+    : sebInstructions;
+
   if (quizType === 'new') {
     canvasRes = await fetch(
       `${CANVAS_URL}/api/quiz/v1/courses/${courseId}/quizzes/${quizId}`,
@@ -587,7 +598,7 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, fileLi
         },
         body: JSON.stringify({
           title: newTitle,
-          instructions: sebInstructions,
+          instructions: finalInstructions,
         }),
       }
     );
@@ -603,7 +614,7 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, fileLi
         body: JSON.stringify({
           quiz: {
             title: newTitle,
-            description: sebInstructions,
+            description: finalInstructions,
           },
         }),
       }

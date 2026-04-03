@@ -47,6 +47,27 @@ class CanvasAPI {
   }
 
   /**
+   * Get the current instructions/description for a quiz.
+   * @param {string|number} courseId
+   * @param {string|number} quizId
+   * @param {string} quizType - 'new' or 'classic'
+   * @returns {Promise<string>} Current instructions HTML or empty string
+   */
+  async getQuizInstructions(courseId, quizId, quizType) {
+    if (quizType === 'new') {
+      const { data } = await this.client.get(
+        `/courses/${courseId}/quizzes/${quizId}`
+      );
+      return data.instructions || '';
+    } else {
+      const { data } = await this.client.get(
+        `/courses/${courseId}/quizzes/${quizId}`
+      );
+      return data.description || '';
+    }
+  }
+
+  /**
    * Get a single course by ID.
    * @param {string|number} courseId
    * @returns {Promise<Object>} Course object

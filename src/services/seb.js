@@ -160,7 +160,8 @@ function generateConfig(options) {
     startURLAllowDeepLink: true,
     ...presetConfig.settings,
     URLFilterRules: buildURLFilterRules(allDomains),
-    ...(quitPassword && { quitPassword }),
+    ...(quitPassword &&
+       { hashedQuitPassword: createHash('sha256').update(quitPassword, 'utf8').digest('hex') }),
     ...overrides,
     originatorVersion: 'Gators for Honor LTI 0.1.0',
   };
