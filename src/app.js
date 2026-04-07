@@ -393,10 +393,6 @@ app.use('/api/courses/:courseId', validateCanvasIds);
 const sebRoutes = require('./routes/seb');
 app.use('/seb', sebRoutes);
 
-// lti routes
-const ltiRoutes = require('./routes/lti');
-app.use('/lti-info', ltiRoutes);
-
 // quiz routes
 const quizRoutes = require('./routes/quizzes');
 app.use(quizRoutes);
