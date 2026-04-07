@@ -258,7 +258,7 @@ You should see JSON with a `keys` array. If you get a 500 error, redo step 1.12.
 
 ```bash
 cd C:\tmp    # or ~/projects
-git clone https://github.com/shane-downs/gators-for-honor-senior-project-2026.git LTI-Gators-for-Honor
+git clone https://github.com/WilsonGoins/LTI-Gators-for-Honor
 cd LTI-Gators-for-Honor
 ```
 
