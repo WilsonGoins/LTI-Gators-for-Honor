@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
+  
   // Allow the page to be embedded in Canvas iframes
   async headers() {
     return [
