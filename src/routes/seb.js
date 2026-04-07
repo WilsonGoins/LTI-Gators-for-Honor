@@ -173,30 +173,6 @@ router.get('/download/:courseId/:quizId', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /seb/config-key
-// ---------------------------------------------------------------------------
-
-router.post('/config-key', express.json(), (req, res) => {
-  try {
-    const { courseId, quizId, preset, allowedDomains, quitPassword, overrides } = req.body;
-
-    const config = seb.generateConfig({
-      courseId: courseId || 'preview',
-      quizId: quizId || 'preview',
-      preset: preset || 'standard',
-      allowedDomains: allowedDomains || [],
-      quitPassword: quitPassword || null,
-      overrides: overrides || {},
-    });
-
-    const configKey = seb.computeConfigKey(config);
-    res.json({ configKey, configPreview: config });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ---------------------------------------------------------------------------
 // POST /seb/access-code
 // Sets a randomized access code on a Canvas quiz.
 // ---------------------------------------------------------------------------
