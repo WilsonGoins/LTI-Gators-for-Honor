@@ -375,49 +375,6 @@ router.get('/gate/:courseId/:quizId', async (req, res) => {
   return res.redirect(redirectURL.toString());
 });
 
-// ---------------------------------------------------------------------------
-// Test endpoints
-// ---------------------------------------------------------------------------
-
-router.get('/generate-test', (req, res) => {
-  try {
-    const config = seb.generateConfig({
-      courseId: '1',
-      quizId: '1',
-      preset: 'standard',
-      allowedDomains: ['canvas.example.edu'],
-    });
-    const configKey = seb.computeConfigKey(config);
-    const xml = seb.configToXML(config);
-
-    res.type('html').send(`
-      <html><body style="font-family: monospace; padding: 20px;">
-        <h2>SEB Config Generation Test</h2>
-        <h3>Config Key</h3>
-        <pre style="background:#f0f0f0;padding:12px;border-radius:4px;word-break:break-all;">${configKey}</pre>
-        <h3>XML Plist Output</h3>
-        <pre style="background:#f0f0f0;padding:12px;border-radius:4px;overflow-x:auto;">${escapeHtml(xml)}</pre>
-        <p><a href="/seb/generate-test-download">Download test .seb file</a></p>
-      </body></html>
-    `);
-  } catch (err) {
-    res.status(500).send(`Error: ${err.message}`);
-  }
-});
-
-router.get('/generate-test-download', (req, res) => {
-  const config = seb.generateConfig({
-    courseId: '1',
-    quizId: '1',
-    preset: 'standard',
-    allowedDomains: ['canvas.example.edu'],
-  });
-  const sebFile = seb.generateSEBFile(config);
-  res.setHeader('Content-Type', 'application/octet-stream');
-  res.setHeader('Content-Disposition', 'attachment; filename="test_exam.seb"');
-  res.send(sebFile);
-});
-
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
