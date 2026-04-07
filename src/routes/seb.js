@@ -7,7 +7,6 @@ const crypto = require('crypto');
 const router = express.Router();
 const FormData = require('form-data');
 const seb = require('../services/seb');
-const CanvasAPI = require('../services/canvas');
 const { saveSEBConfig, getSEBFile, clearAccessCode, updateSEBFileLink } = require('../db/client');
 
 const CANVAS_URL = process.env.CANVAS_URL;
@@ -128,8 +127,7 @@ router.post('/generate', express.json(), async (req, res) => {
     // Update quiz title and instructions with SEB download prompt
     if (fileLink) {
       try {
-        const canvasAPI = new CanvasAPI(undefined, canvasToken);
-        const currentInstructions = await canvasAPI.getQuizInstructions(courseId, quizId, quizType);
+        const currentInstructions = await getQuizInstructions(courseId, quizId, quizType, canvasToken);
         await updateQuizForSEB(courseId, quizId, quizType, quizTitle || '', currentInstructions, fileLink, canvasToken);
         console.log(`✅ Quiz title and instructions updated for course ${courseId}, quiz ${quizId}`);
       } catch (updateErr) {
@@ -492,7 +490,7 @@ async function uploadFileToFolder(folderId, courseId, fileName, fileBuffer, toke
 }
 
 // update quiz title and instructions to include SEB download link
-async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, currentInstructions,fileLink, token) {
+async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, currentInstructions, fileLink, token) {
   const newTitle = currentTitle.includes('Requires SEB')
     ? currentTitle
     : `${currentTitle} (Requires SEB)`;
@@ -584,6 +582,16 @@ async function deleteOldCanvasFile(courseId, quizId, token) {
   } catch (err) {
     console.warn(`⚠️ Error deleting old Canvas file: ${err.message}`);
   }
+}
+
+async function getQuizInstructions(courseId, quizId, quizType, token) {
+  const res = await fetch(
+    `${CANVAS_URL}/api/v1/courses/${courseId}/quizzes/${quizId}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw new Error(`Failed to fetch quiz instructions (${res.status})`);
+  const data = await res.json();
+  return quizType === 'new' ? (data.instructions || '') : (data.description || '');
 }
 
 
