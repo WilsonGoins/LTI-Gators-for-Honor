@@ -373,9 +373,6 @@ router.get('/gate/:courseId/:quizId', async (req, res) => {
   return res.redirect(redirectURL.toString());
 });
 
-function escapeHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
 
 // helper function to find or create the SEB folder in Canvas Files API
 async function getOrCreateSEBFolder(courseId, token) {
