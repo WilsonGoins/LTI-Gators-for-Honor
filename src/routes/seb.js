@@ -229,67 +229,6 @@ router.post('/access-code', express.json(), async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// DELETE /seb/access-code
-// Removes access code from both Canvas and the DB.
-//
-// Body: { courseId, quizId, quizType }
-// ---------------------------------------------------------------------------
-
-router.delete('/access-code', express.json(), async (req, res) => {
-  try {
-    const { courseId, quizId, quizType } = req.body;
-
-    if (!courseId || !quizId) {
-      return res.status(400).json({ error: 'courseId and quizId are required' });
-    }
-
-    const canvasToken = process.env.CANVAS_ACCESS_TOKEN;
-    if (!canvasToken) {
-      return res.status(500).json({ error: 'Canvas access token not configured' });
-    }
-
-    // Remove access code from Canvas
-    let canvasRes;
-    if (quizType === 'new') {
-      canvasRes = await fetch(
-        `${CANVAS_URL}/api/quiz/v1/courses/${courseId}/quizzes/${quizId}`,
-        {
-          method: 'PATCH',
-          headers: { Authorization: `Bearer ${canvasToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            quiz_settings: { require_student_access_code: false, student_access_code: '' },
-          }),
-        }
-      );
-    } else {
-      canvasRes = await fetch(
-        `${CANVAS_URL}/api/v1/courses/${courseId}/quizzes/${quizId}`,
-        {
-          method: 'PUT',
-          headers: { Authorization: `Bearer ${canvasToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ quiz: { access_code: '' } }),
-        }
-      );
-    }
-
-    if (!canvasRes.ok) {
-      const errBody = await canvasRes.text();
-      console.error('Canvas remove access code error:', canvasRes.status, errBody);
-      return res.status(502).json({ error: 'Failed to remove access code from Canvas', detail: `Canvas returned ${canvasRes.status}` });
-    }
-
-    // Clear from our DB too
-    await clearAccessCode(courseId, quizId);
-
-    console.log(`✅ Access code removed for course ${courseId}, quiz ${quizId}`);
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Remove access code error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ---------------------------------------------------------------------------
 // GET /gate/:courseId/:quizId
 // SEB Config Key validation gate.
 //
