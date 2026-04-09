@@ -1,4 +1,4 @@
-// Entry point — manual LTI 1.3 OIDC flow (no ltijs dependency)
+// Entry point — manual LTI 1.3 OIDC flow
 // Based on https://blog.devendran.in/build-lti13-tool-canvas-lms
 //
 // After successful LTI launch, redirects to a Next.js frontend
@@ -91,18 +91,6 @@ function createSessionToken(context) {
   return token;
 }
 
-
-// helper to sanitize errors before sending to frontend
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-
 // ---------------------------------------------------------------------------
 // API — Frontend fetches LTI context with the session token
 // ---------------------------------------------------------------------------
@@ -177,13 +165,6 @@ app.post('/lti/login', (req, res) => {
       client_id,
       lti_deployment_id,
     } = req.body;
-
-    // print debugging
-    // console.log('\n========== LTI LOGIN ==========');
-    // console.log('iss:', iss);
-    // console.log('client_id:', client_id);
-    // console.log('login_hint:', login_hint);
-    // console.log('================================\n');
 
     if (!iss || !login_hint || !client_id) {
       return res.status(400).json({ error: 'Missing required LTI login parameters' });
@@ -310,12 +291,6 @@ app.post('/lti/launch', async (req, res) => {
     const returnUrlMatch = (launchPresentation.return_url || '').match(/\/courses\/(\d+)/);
     const numericCourseId = custom.canvas_course_id || (returnUrlMatch && returnUrlMatch[1]);
 
-    // Debug: dump full payload so you can see exactly what Canvas sends
-    // console.log('\n--- FULL JWT PAYLOAD ---');
-    // console.log(JSON.stringify(payload, null, 2));
-    // console.log('--- END PAYLOAD ---\n');
-
-
     // Canvas LTI 1.3 uses OIDC standard claims: given_name + family_name
     const userName =
       [payload.given_name, payload.family_name].filter(Boolean).join(' ') ||
@@ -392,10 +367,6 @@ app.use('/api/courses/:courseId', validateCanvasIds);
 // seb routes
 const sebRoutes = require('./routes/seb');
 app.use('/seb', sebRoutes);
-
-// lti routes
-const ltiRoutes = require('./routes/lti');
-app.use('/lti-info', ltiRoutes);
 
 // quiz routes
 const quizRoutes = require('./routes/quizzes');

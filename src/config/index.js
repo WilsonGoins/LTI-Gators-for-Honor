@@ -17,7 +17,7 @@ const config = {
   // Canvas REST API
   canvas: {
     apiUrl: process.env.CANVAS_API_URL,
-    apiToken: process.env.CANVAS_API_TOKEN,
+    accessToken: process.env.CANVAS_ACCESS_TOKEN,
   },
 
   // SEB defaults

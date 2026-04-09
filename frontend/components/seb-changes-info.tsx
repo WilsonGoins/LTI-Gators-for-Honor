@@ -29,8 +29,6 @@ interface ChangeItem {
 export function SEBChangesInfo({
     quizTitle,
     accessCode,
-    overrides,
-    allowedDomains,
     disabled,
 }: SEBChangesInfoProps) {
     const [open, setOpen] = useState(false);
@@ -68,17 +66,12 @@ export function SEBChangesInfo({
     // Build the list of changes based on current config state
     const changes: ChangeItem[] = [];
 
-    // Title change
-    const alreadyTagged = /\(Requires SEB\)/i.test(quizTitle);
-    if (!alreadyTagged) {
-        changes.push({
+    changes.push(
+        {
             icon: Type,
             label: "Quiz title updated",
             detail: `The title will have "(Requires SEB)" appended to it.`,
-        });
-    }
-
-    changes.push(
+        },
         {
             icon: BookText,
             label: "Quiz instructions updated",

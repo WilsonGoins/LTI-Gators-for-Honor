@@ -7,7 +7,6 @@ const crypto = require('crypto');
 const router = express.Router();
 const FormData = require('form-data');
 const seb = require('../services/seb');
-const CanvasAPI = require('../services/canvas');
 const { saveSEBConfig, getSEBFile, clearAccessCode, updateSEBFileLink } = require('../db/client');
 
 const CANVAS_URL = process.env.CANVAS_URL;
@@ -128,8 +127,7 @@ router.post('/generate', express.json(), async (req, res) => {
     // Update quiz title and instructions with SEB download prompt
     if (fileLink) {
       try {
-        const canvasAPI = new CanvasAPI(undefined, canvasToken);
-        const currentInstructions = await canvasAPI.getQuizInstructions(courseId, quizId, quizType);
+        const currentInstructions = await getQuizInstructions(courseId, quizId, quizType, canvasToken);
         await updateQuizForSEB(courseId, quizId, quizType, quizTitle || '', currentInstructions, fileLink, canvasToken);
         console.log(`✅ Quiz title and instructions updated for course ${courseId}, quiz ${quizId}`);
       } catch (updateErr) {
@@ -169,30 +167,6 @@ router.get('/download/:courseId/:quizId', async (req, res) => {
   } catch (err) {
     console.error('SEB download error:', err);
     res.status(500).json({ error: 'Failed to download SEB config' });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// POST /seb/config-key
-// ---------------------------------------------------------------------------
-
-router.post('/config-key', express.json(), (req, res) => {
-  try {
-    const { courseId, quizId, preset, allowedDomains, quitPassword, overrides } = req.body;
-
-    const config = seb.generateConfig({
-      courseId: courseId || 'preview',
-      quizId: quizId || 'preview',
-      preset: preset || 'standard',
-      allowedDomains: allowedDomains || [],
-      quitPassword: quitPassword || null,
-      overrides: overrides || {},
-    });
-
-    const configKey = seb.computeConfigKey(config);
-    res.json({ configKey, configPreview: config });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
 });
 
@@ -250,67 +224,6 @@ router.post('/access-code', express.json(), async (req, res) => {
     res.json({ accessCode });
   } catch (err) {
     console.error('Access code error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// DELETE /seb/access-code
-// Removes access code from both Canvas and the DB.
-//
-// Body: { courseId, quizId, quizType }
-// ---------------------------------------------------------------------------
-
-router.delete('/access-code', express.json(), async (req, res) => {
-  try {
-    const { courseId, quizId, quizType } = req.body;
-
-    if (!courseId || !quizId) {
-      return res.status(400).json({ error: 'courseId and quizId are required' });
-    }
-
-    const canvasToken = process.env.CANVAS_ACCESS_TOKEN;
-    if (!canvasToken) {
-      return res.status(500).json({ error: 'Canvas access token not configured' });
-    }
-
-    // Remove access code from Canvas
-    let canvasRes;
-    if (quizType === 'new') {
-      canvasRes = await fetch(
-        `${CANVAS_URL}/api/quiz/v1/courses/${courseId}/quizzes/${quizId}`,
-        {
-          method: 'PATCH',
-          headers: { Authorization: `Bearer ${canvasToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            quiz_settings: { require_student_access_code: false, student_access_code: '' },
-          }),
-        }
-      );
-    } else {
-      canvasRes = await fetch(
-        `${CANVAS_URL}/api/v1/courses/${courseId}/quizzes/${quizId}`,
-        {
-          method: 'PUT',
-          headers: { Authorization: `Bearer ${canvasToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ quiz: { access_code: '' } }),
-        }
-      );
-    }
-
-    if (!canvasRes.ok) {
-      const errBody = await canvasRes.text();
-      console.error('Canvas remove access code error:', canvasRes.status, errBody);
-      return res.status(502).json({ error: 'Failed to remove access code from Canvas', detail: `Canvas returned ${canvasRes.status}` });
-    }
-
-    // Clear from our DB too
-    await clearAccessCode(courseId, quizId);
-
-    console.log(`✅ Access code removed for course ${courseId}, quiz ${quizId}`);
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Remove access code error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -399,52 +312,6 @@ router.get('/gate/:courseId/:quizId', async (req, res) => {
   return res.redirect(redirectURL.toString());
 });
 
-// ---------------------------------------------------------------------------
-// Test endpoints
-// ---------------------------------------------------------------------------
-
-router.get('/generate-test', (req, res) => {
-  try {
-    const config = seb.generateConfig({
-      courseId: '1',
-      quizId: '1',
-      preset: 'standard',
-      allowedDomains: ['canvas.example.edu'],
-    });
-    const configKey = seb.computeConfigKey(config);
-    const xml = seb.configToXML(config);
-
-    res.type('html').send(`
-      <html><body style="font-family: monospace; padding: 20px;">
-        <h2>SEB Config Generation Test</h2>
-        <h3>Config Key</h3>
-        <pre style="background:#f0f0f0;padding:12px;border-radius:4px;word-break:break-all;">${configKey}</pre>
-        <h3>XML Plist Output</h3>
-        <pre style="background:#f0f0f0;padding:12px;border-radius:4px;overflow-x:auto;">${escapeHtml(xml)}</pre>
-        <p><a href="/seb/generate-test-download">Download test .seb file</a></p>
-      </body></html>
-    `);
-  } catch (err) {
-    res.status(500).send(`Error: ${err.message}`);
-  }
-});
-
-router.get('/generate-test-download', (req, res) => {
-  const config = seb.generateConfig({
-    courseId: '1',
-    quizId: '1',
-    preset: 'standard',
-    allowedDomains: ['canvas.example.edu'],
-  });
-  const sebFile = seb.generateSEBFile(config);
-  res.setHeader('Content-Type', 'application/octet-stream');
-  res.setHeader('Content-Disposition', 'attachment; filename="test_exam.seb"');
-  res.send(sebFile);
-});
-
-function escapeHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
 
 // helper function to find or create the SEB folder in Canvas Files API
 async function getOrCreateSEBFolder(courseId, token) {
@@ -559,7 +426,7 @@ async function uploadFileToFolder(folderId, courseId, fileName, fileBuffer, toke
 }
 
 // update quiz title and instructions to include SEB download link
-async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, currentInstructions,fileLink, token) {
+async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, currentInstructions, fileLink, token) {
   const newTitle = currentTitle.includes('Requires SEB')
     ? currentTitle
     : `${currentTitle} (Requires SEB)`;
@@ -651,6 +518,16 @@ async function deleteOldCanvasFile(courseId, quizId, token) {
   } catch (err) {
     console.warn(`⚠️ Error deleting old Canvas file: ${err.message}`);
   }
+}
+
+async function getQuizInstructions(courseId, quizId, quizType, token) {
+  const res = await fetch(
+    `${CANVAS_URL}/api/v1/courses/${courseId}/quizzes/${quizId}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw new Error(`Failed to fetch quiz instructions (${res.status})`);
+  const data = await res.json();
+  return quizType === 'new' ? (data.instructions || '') : (data.description || '');
 }
 
 
