@@ -17,6 +17,7 @@ function isConnectionError(err) {
   );
 }
 
+
 // ─── Pool configuration ─────────────────────────────────────────────────────
 
 // pooled connection which is used for single-statement queries
@@ -41,9 +42,8 @@ const unpooledPool = new Pool({
   keepAliveInitialDelayMillis: 5000, // send TCP keepalive sooner (was 10s)
 });
 
-// ─── Pool error handlers ────────────────────────────────────────────────────
-// Without these, a surprise disconnect on an idle connection crashes the process.
 
+// ─── Pool error handlers ────────────────────────────────────────────────────
 pool.on("error", (err) => {
   console.error("Unexpected error on idle pooled client:", err.message);
 });
@@ -158,8 +158,6 @@ async function syncQuizzes(courseId, rows, retries = 2) {
 
 // ─── SEB Status (for dashboard) ──────────────────────────────────────────────
 // Returns SEB status + full settings for every quiz in a course.
-// The frontend gets everything in one shot on page load.
-
 async function getSEBStatusByCourse(courseId) {
   const sql = `
     SELECT
@@ -225,7 +223,6 @@ async function getSEBStatusByCourse(courseId) {
 
 
 // ─── SEB Settings (single quiz) ──────────────────────────────────────────────
-
 async function getSEBSettings(courseId, quizId) {
   const sql = `SELECT * FROM seb_settings WHERE course_id = $1 AND quiz_id = $2`;
   const { rows } = await queryWithRetry(sql, [courseId, quizId]);
@@ -250,7 +247,6 @@ async function getSEBSettings(courseId, quizId) {
 
 // ─── Save SEB Config (settings + binary file) with retry ─────────────────────
 // Called when the instructor clicks "Save & Download .seb" in the config dialog.
-
 async function saveSEBConfig(courseId, quizId, { settings, fileData, fileName, configKey, accessCode, canvasQuizURL }, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     const client = await unpooledPool.connect();
@@ -343,7 +339,6 @@ async function saveSEBConfig(courseId, quizId, { settings, fileData, fileName, c
 
 
 // ─── Download stored .seb file ───────────────────────────────────────────────
-
 async function getSEBFile(courseId, quizId) {
   const sql = `
     SELECT

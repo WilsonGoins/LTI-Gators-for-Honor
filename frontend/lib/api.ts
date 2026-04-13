@@ -86,25 +86,3 @@ export async function setAccessCode(
   }
   return res.json();
 }
-
-
-// removes access code from Canvas and DB
-export async function removeAccessCode(
-  courseId: string,
-  quizId: string,
-  quizType: "classic" | "new",
-  token: string
-): Promise<void> {
-  const res = await fetch(`${BACKEND_URL}/seb/access-code`, {
-    method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ courseId, quizId, quizType }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.detail || err.error || `Failed to remove access code (${res.status})`);
-  }
-}
