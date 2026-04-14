@@ -129,7 +129,7 @@ export function SEBChangesInfo({
             {open && (
                 <div
                     ref={panelRef}
-                    className="absolute bottom-full mb-2 right-0 z-50 w-80 animate-in fade-in slide-in-from-bottom-2 duration-200"
+                    className="fixed bottom-14 left-4 right-4 z-[60] max-w-xs mx-auto animate-in fade-in slide-in-from-bottom-2 duration-200"
                 >
                     <div className="rounded-xl border bg-card shadow-xl overflow-hidden">
                         {/* Panel header */}
