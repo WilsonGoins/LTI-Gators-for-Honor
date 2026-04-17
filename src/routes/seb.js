@@ -110,7 +110,7 @@ router.post('/generate', express.json(), async (req, res) => {
       fileLink = `${CANVAS_URL}/courses/${courseId}/files/${canvasFile.id}/download`;
       console.log(`✅ SEB file uploaded to Canvas course ${courseId} files`);
     } catch (uploadErr) {
-      console.error('⚠️ Failed to upload SEB file to Canvas:', uploadErr.message);
+      console.error('⚠️ Failed to upload SEB file to Canvas:');
     }
 
     console.log(`✅ SEB config saved for course ${courseId}, quiz ${quizId}`);
@@ -131,7 +131,7 @@ router.post('/generate', express.json(), async (req, res) => {
         await updateQuizForSEB(courseId, quizId, quizType, quizTitle || '', currentInstructions, fileLink, canvasToken);
         console.log(`✅ Quiz title and instructions updated for course ${courseId}, quiz ${quizId}`);
       } catch (updateErr) {
-        console.error('⚠️ Failed to update quiz title/instructions:', updateErr.message);
+        console.error('⚠️ Failed to update quiz title/instructions:');
       }
     }
 
