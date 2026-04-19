@@ -357,24 +357,6 @@ async function getSEBFile(courseId, quizId) {
   return rows[0] ?? null;
 }
 
-
-// ─── Clear access code ──────────────────────────────────────────────────────
-
-async function clearAccessCode(courseId, quizId) {
-  await queryWithRetry(
-    `UPDATE seb_settings SET access_code = NULL, updated_at = now() WHERE course_id = $1 AND quiz_id = $2`,
-    [courseId, quizId]
-  );
-}
-
-// update the seb_config_files record with the Canvas file link after upload
-async function updateSEBFileLink(courseId, quizId, fileLink) {
-  await queryWithRetry(
-    `UPDATE seb_config_files SET file_link = $1 WHERE course_id = $2 AND quiz_id = $3`,
-    [fileLink, courseId, quizId]
-  );
-}
-
 async function getUserByCanvasId(canvasUserId) {
   const { rows } = await queryWithRetry(
     `SELECT canvas_user_id, refresh_token, access_token, token_expires_at
@@ -481,8 +463,6 @@ module.exports = {
   getSEBSettings,
   saveSEBConfig,
   getSEBFile,
-  clearAccessCode,
-  updateSEBFileLink,
   getUserByCanvasId,
   upsertUser,
   updateUserAccessToken,

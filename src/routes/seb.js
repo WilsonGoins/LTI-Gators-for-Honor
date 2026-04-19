@@ -8,7 +8,7 @@ const config = require('../config');
 const router = express.Router();
 const FormData = require('form-data');
 const seb = require('../services/seb');
-const { saveSEBConfig, getSEBFile, clearAccessCode, updateSEBFileLink,
+const { saveSEBConfig, getSEBFile,
         getLaunchSessionByToken, markLaunchSessionUsed, getUserByCanvasId } = require('../db/client');
 const canvasOAuth = require('../services/canvas-oauth');
 
@@ -47,7 +47,6 @@ router.get('/presets', (req, res) => {
 //     accessCode: "a1b2c3..." | null
 //   }
 // ---------------------------------------------------------------------------
-
 router.post('/generate', express.json(), async (req, res) => {
   const canvasToken = process.env.CANVAS_ACCESS_TOKEN;
 
@@ -294,7 +293,6 @@ router.get('/gate/:courseId/:quizId', async (req, res) => {
   return res.redirect(redirectURL.toString());
 });
 
-
 // ---------------------------------------------------------------------------
 // GET /seb/gate-token/:launchToken
 // Per-student SEB validation gate. Validates the Config Key hash, refreshes
@@ -414,119 +412,6 @@ router.get('/gate-token/:launchToken', async (req, res) => {
   return res.redirect(sessionURL);
 });
 
-
-// helper function to find or create the SEB folder in Canvas Files API
-async function getOrCreateSEBFolder(courseId, token) {
-  const folderName = 'SEB Configuration Files';
-  
-  // Try to find the folder by path first
-  const searchRes = await fetch(
-    `${CANVAS_URL}/api/v1/courses/${courseId}/folders/by_path/${encodeURIComponent(folderName)}`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  
-  if (searchRes.ok) {
-    const folders = await searchRes.json();
-    if (Array.isArray(folders) && folders.length > 0) {
-      return folders[folders.length - 1];
-    }
-  }
-  
-  const rootRes = await fetch(
-    `${CANVAS_URL}/api/v1/courses/${courseId}/folders/root`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!rootRes.ok) {
-    throw new Error(`Failed to get root folder (${rootRes.status})`);
-  }
-  const rootFolder = await rootRes.json();
-  
-  const createRes = await fetch(
-    `${CANVAS_URL}/api/v1/courses/${courseId}/folders`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: folderName,
-        parent_folder_id: rootFolder.id,
-      }),
-    }
-  );
-  
-  if (!createRes.ok) {
-    const err = await createRes.text();
-    throw new Error(`Failed to create SEB folder (${createRes.status}): ${err}`);
-  }
-  
-  return createRes.json();
-}
-
-// helper to add file to folder
-async function uploadFileToFolder(folderId, courseId, fileName, fileBuffer, token) {
-  const notifyRes = await fetch(
-    `${CANVAS_URL}/api/v1/courses/${courseId}/files`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: fileName,
-        parent_folder_id: folderId,
-        content_type: 'application/octet-stream',
-        size: fileBuffer.length,
-        on_duplicate: 'overwrite',
-      }),
-    }
-  );
-
-  if (!notifyRes.ok) {
-    const err = await notifyRes.text();
-    throw new Error(`Canvas file notify failed (${notifyRes.status}): ${err}`);
-  }
-
-  const { upload_url, upload_params } = await notifyRes.json();
-
-  const form = new FormData();
-  for (const [key, value] of Object.entries(upload_params)) {
-    form.append(key, String(value));
-  }
-  form.append('file', fileBuffer, {
-    filename: fileName,
-    contentType: 'application/octet-stream',
-  });
-
-  const uploadRes = await fetch(upload_url, {
-    method: 'POST',
-    body: form.getBuffer(),
-    headers: form.getHeaders(),
-    redirect: 'manual',
-  });
-
-  if (uploadRes.status === 301 || uploadRes.status === 302 || uploadRes.status === 303) {
-    const confirmUrl = uploadRes.headers.get('Location');
-    const confirmRes = await fetch(confirmUrl, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!confirmRes.ok) {
-      throw new Error(`Canvas file confirm failed (${confirmRes.status})`);
-    }
-    return confirmRes.json();
-  }
-
-  if (!uploadRes.ok) {
-    const err = await uploadRes.text();
-    throw new Error(`Canvas file upload failed (${uploadRes.status}): ${err}`);
-  }
-
-  return uploadRes.json();
-}
-
 // update quiz title and instructions to include SEB download link
 async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, currentInstructions, launchURL, token) {
   const newTitle = currentTitle.includes('Requires SEB')
@@ -581,31 +466,6 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, curren
   }
 
   return canvasRes.json();
-}
-
-
-// Delete old Canvas file using stored file_link before uploading a new one
-async function deleteOldCanvasFile(courseId, quizId, token) {
-  const oldFile = await getSEBFile(courseId, quizId);
-  if (!oldFile?.file_link) return;
-
-  const match = oldFile.file_link.match(/\/files\/(\d+)\//);
-  if (!match) return;
-
-  const fileId = match[1];
-  try {
-    const delRes = await fetch(`${CANVAS_URL}/api/v1/files/${fileId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (delRes.ok) {
-      console.log(`✅ Deleted old Canvas file ${fileId} before re-upload`);
-    } else {
-      console.warn(`⚠️ Failed to delete old Canvas file ${fileId} (${delRes.status})`);
-    }
-  } catch (err) {
-    console.warn(`⚠️ Error deleting old Canvas file: ${err.message}`);
-  }
 }
 
 async function getQuizInstructions(courseId, quizId, quizType, token) {
