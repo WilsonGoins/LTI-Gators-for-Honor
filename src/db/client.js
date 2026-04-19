@@ -456,6 +456,23 @@ async function updateLaunchSessionConfigKey(launchToken, configKey) {
   );
 }
 
+async function getLaunchSessionByToken(launchToken) {
+  const { rows } = await queryWithRetry(
+    `SELECT launch_token, canvas_user_id, course_id, quiz_id, canvas_quiz_url,
+            access_code, config_key, expires_at, used_at
+     FROM launch_sessions WHERE launch_token = $1`,
+    [launchToken]
+  );
+  return rows[0] ?? null;
+}
+
+async function markLaunchSessionUsed(launchToken) {
+  await queryWithRetry(
+    `UPDATE launch_sessions SET used_at = now() WHERE launch_token = $1`,
+    [launchToken]
+  );
+}
+
 module.exports = {
   pool,
   unpooledPool,
@@ -472,4 +489,6 @@ module.exports = {
   getSEBConfigForStudent,
   createLaunchSession,
   updateLaunchSessionConfigKey,
+  getLaunchSessionByToken,
+  markLaunchSessionUsed,
 };

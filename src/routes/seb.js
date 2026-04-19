@@ -7,7 +7,9 @@ const crypto = require('crypto');
 const router = express.Router();
 const FormData = require('form-data');
 const seb = require('../services/seb');
-const { saveSEBConfig, getSEBFile, clearAccessCode, updateSEBFileLink } = require('../db/client');
+const { saveSEBConfig, getSEBFile, clearAccessCode, updateSEBFileLink,
+        getLaunchSessionByToken, markLaunchSessionUsed, getUserByCanvasId } = require('../db/client');
+const canvasOAuth = require('../services/canvas-oauth');
 
 const CANVAS_URL = process.env.CANVAS_URL;
 
@@ -310,6 +312,126 @@ router.get('/gate/:courseId/:quizId', async (req, res) => {
 
   console.log(`Gate passed: course ${courseId} quiz ${quizId} -> redirecting`);
   return res.redirect(redirectURL.toString());
+});
+
+
+// ---------------------------------------------------------------------------
+// GET /seb/gate-token/:launchToken
+// Per-student SEB validation gate. Validates the Config Key hash, refreshes
+// the student's Canvas OAuth token, then uses /login/session_token to
+// establish a Canvas session and redirect into the quiz with the access
+// code preserved — no login form shown to the student.
+// ---------------------------------------------------------------------------
+router.get('/gate-token/:launchToken', async (req, res) => {
+  const { launchToken } = req.params;
+
+  // 1. Header check — SEB always sends this
+  const configKeyHash = req.headers['x-safeexambrowser-configkeyhash'];
+  if (!configKeyHash) {
+    return res.status(403).send(`
+      <html>
+      <head><title>SEB Required</title></head>
+      <body style="font-family:system-ui,sans-serif;max-width:480px;margin:60px auto;text-align:center;">
+        <h2>Safe Exam Browser Required</h2>
+        <p>This exam must be opened using Safe Exam Browser.</p>
+        <p>Please open the <code>.seb</code> configuration file provided by your instructor.</p>
+      </body>
+      </html>
+    `);
+  }
+
+  // 2. Look up the launch session
+  let session;
+  try {
+    session = await getLaunchSessionByToken(launchToken);
+  } catch (err) {
+    console.error('Gate DB error:', err);
+    return res.status(500).send('Internal server error.');
+  }
+
+  if (!session) {
+    return res.status(404).send('Launch session not found. Re-download your .seb file.');
+  }
+  if (session.used_at) {
+    return res.status(403).send('This launch link has already been used. Re-download your .seb file.');
+  }
+  if (new Date(session.expires_at) < new Date()) {
+    return res.status(403).send('This launch link has expired. Re-download your .seb file.');
+  }
+  if (!session.config_key) {
+    return res.status(500).send('Launch session missing Config Key. Contact your instructor.');
+  }
+
+  // 3. Verify the Config Key hash
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.get('host');
+  const requestURL = `${proto}://${host}${req.originalUrl}`;
+
+  if (!seb.verifyConfigKeyHash(requestURL, session.config_key, configKeyHash)) {
+    console.log(`Gate rejected: CK mismatch for token ${launchToken.slice(0, 8)}…`);
+    return res.status(403).send(`
+      <html>
+      <head><title>Invalid Configuration</title></head>
+      <body style="font-family:system-ui,sans-serif;max-width:480px;margin:60px auto;text-align:center;">
+        <h2>Invalid SEB Configuration</h2>
+        <p>Your SEB configuration doesn't match what's registered for this exam.</p>
+        <p>Please re-download the latest <code>.seb</code> file and try again.</p>
+      </body>
+      </html>
+    `);
+  }
+
+  // 4. Look up the student's refresh token
+  let user;
+  try {
+    user = await getUserByCanvasId(session.canvas_user_id);
+  } catch (err) {
+    console.error('Gate user lookup error:', err);
+    return res.status(500).send('Failed to look up your account.');
+  }
+  if (!user?.refresh_token) {
+    return res.status(500).send('Your Canvas authorization has expired. Re-download your .seb file.');
+  }
+
+  // 5. Refresh access token
+  let accessToken;
+  try {
+    accessToken = await canvasOAuth.refreshAccessToken({
+      canvasUserId: session.canvas_user_id,
+      refreshToken: user.refresh_token,
+    });
+  } catch (err) {
+    console.error('Gate token refresh error:', err);
+    return res.status(500).send('Failed to authenticate with Canvas. Re-download your .seb file.');
+  }
+
+  // 6. Build the quiz URL with access code
+  const quizURL = new URL(session.canvas_quiz_url);
+  if (session.access_code) {
+    quizURL.searchParams.set('access_code', session.access_code);
+  }
+
+  // 7. Ask Canvas for a session URL
+  let sessionURL;
+  try {
+    sessionURL = await canvasOAuth.getSessionURL({
+      accessToken,
+      returnTo: quizURL.toString(),
+    });
+  } catch (err) {
+    console.error('Gate session_token error:', err);
+    return res.status(500).send('Failed to establish Canvas session.');
+  }
+
+  // 8. Burn the launch token (best effort)
+  try {
+    await markLaunchSessionUsed(launchToken);
+  } catch (err) {
+    console.warn('Failed to mark launch token used:', err.message);
+  }
+
+  console.log(`✅ Gate passed: user ${session.canvas_user_id}, course ${session.course_id}, quiz ${session.quiz_id}`);
+  return res.redirect(sessionURL);
 });
 
 
