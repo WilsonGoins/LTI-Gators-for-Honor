@@ -291,8 +291,25 @@ router.get('/oauth/callback', async (req, res) => {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
     if (!profileRes.ok) {
-      console.error('[OAuth] Profile fetch failed:', profileRes.status);
-      return res.status(500).send('Failed to fetch Canvas profile. Please try again.');
+        console.error('[OAuth] Profile fetch failed:', profileRes.status);
+
+        // 401/403 here usually means the user isn't a real Canvas user —
+        // most commonly "View as Student" (a test student account that can't
+        // access OAuth endpoints). Detect and show a clearer message.
+        if (profileRes.status === 401 || profileRes.status === 403) {
+            return res.status(403).send(`
+            <html><body style="font-family:system-ui,sans-serif;max-width:560px;margin:60px auto;padding:0 20px;">
+                <div style="border:1px solid #e5e5e5;border-radius:12px;padding:32px;background:#fafafa;">
+                <h2 style="margin-top:0;">Unable to launch exam</h2>
+                <p>This exam can't be launched from a <strong>Student View</strong> session or a test account.</p>
+                <p>If you're an instructor trying to preview the student experience, please log in with a real student account in a separate browser (or use a private/incognito window).</p>
+                <p>If you are a student seeing this message, please log out of Canvas and log back in with your own account, then try the launch link again.</p>
+                </div>
+            </body></html>
+            `);
+        }
+
+        return res.status(500).send('Failed to fetch Canvas profile. Please try again.');
     }
     const profile = await profileRes.json();
 

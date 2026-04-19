@@ -65,7 +65,7 @@ router.post('/generate', express.json(), async (req, res) => {
     }
 
     // Generate the configuration — startURL is the gate, built internally
-    const config = seb.generateConfig({
+    const sebConfig = seb.generateConfig({
       courseId,
       quizId,
       preset: preset || 'standard',
@@ -74,8 +74,8 @@ router.post('/generate', express.json(), async (req, res) => {
       overrides: overrides || {},
     });
 
-    const configKey = seb.computeConfigKey(config);
-    const sebFile = seb.generateSEBFile(config);
+    const configKey = seb.computeConfigKey(sebConfig);
+    const sebFile = seb.generateSEBFile(sebConfig);
     const baseName = (quizTitle || `quiz_${quizId}`)
       .replace(/\s*\(Requires SEB\)/gi, '')
       .replace(/[^a-zA-Z0-9_\- ]/g, '')
@@ -105,15 +105,13 @@ router.post('/generate', express.json(), async (req, res) => {
     console.log(`✅ SEB config saved for course ${courseId}, quiz ${quizId}`);
 
     // Update quiz title and instructions with launch link
-    if (fileLink) {
-      try {
-        const launchURL = `${config.tool.url}/launch/${courseId}/${quizId}`;
-        const currentInstructions = await getQuizInstructions(courseId, quizId, quizType, canvasToken);
-        await updateQuizForSEB(courseId, quizId, quizType, quizTitle || '', currentInstructions, launchURL, canvasToken);
-        console.log(`✅ Quiz title and instructions updated for course ${courseId}, quiz ${quizId}`);
-      } catch (updateErr) {
-        console.error('⚠️ Failed to update quiz title/instructions:', updateErr.message);
-      }
+    try {
+      const launchURL = `${config.tool.url}/launch/${courseId}/${quizId}`;
+      const currentInstructions = await getQuizInstructions(courseId, quizId, quizType, canvasToken);
+      await updateQuizForSEB(courseId, quizId, quizType, quizTitle || '', currentInstructions, launchURL, canvasToken);
+      console.log(`✅ Quiz title and instructions updated for course ${courseId}, quiz ${quizId}`);
+    } catch (updateErr) {
+      console.error('⚠️ Failed to update quiz title/instructions:', updateErr.message);
     }
 
     // Return the file as a download
