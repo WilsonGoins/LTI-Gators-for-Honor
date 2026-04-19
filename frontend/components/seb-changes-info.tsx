@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { HelpCircle, X, FileDown, KeyRound, BookText, Type } from "lucide-react";
+import { HelpCircle, X, KeyRound, BookText, Type } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ConfigOverrides {
@@ -67,26 +67,21 @@ export function SEBChangesInfo({
     const changes: ChangeItem[] = [];
 
     changes.push(
-        {
-            icon: Type,
-            label: "Quiz title updated",
-            detail: `The title will have "(Requires SEB)" appended to it.`,
-        },
-        {
-            icon: BookText,
-            label: "Quiz instructions updated",
-            detail: `The assignment instructions will indicate how to launch it with SEB.`,
-        },
-        {
-            icon: KeyRound,
-            label: "Access code set on Canvas",
-            detail: `Code "${accessCode}" will be required to take the assessment.`,
-        },
-        {
-            icon: FileDown,
-            label: ".seb config file downloaded",
-            detail: `A configuration file will be saved to your device and "Canvas Files".`,
-        }
+    {
+        icon: Type,
+        label: "Quiz title updated",
+        detail: `The title will have "(Requires SEB)" appended to it.`,
+    },
+    {
+        icon: BookText,
+        label: "Quiz instructions updated",
+        detail: `The assignment instructions will indicate how to launch the quiz with SEB.`,
+    },
+    {
+        icon: KeyRound,
+        label: "Access code enforced behind SEB",
+        detail: `An access code is required on the quiz, but it's never shown to students.`,
+    }
 );
 
 

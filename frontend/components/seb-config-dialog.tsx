@@ -345,7 +345,9 @@ export function SEBConfigDialog({
             const accessCodeValue = result.accessCode;
 
 
-            // Step 2: Generate the .seb config file via backend
+            // Step 2: Generate and save the SEB config on the backend
+            //   (backend also updates the Canvas quiz's title + instructions
+            //    with the per-student launch link)
             const canvasQuizURL = `${canvasUrl}/courses/${courseId}/quizzes/${quiz.id}/take`;
             const domains = allowedDomains
                 .split(/[,\n]/)
@@ -374,23 +376,12 @@ export function SEBConfigDialog({
 
             if (!generateRes.ok) {
                 const err = await generateRes.json().catch(() => ({}));
-                throw new Error(err.error || `Generation failed (${generateRes.status})`);
+                throw new Error(err.error || `Save failed (${generateRes.status})`);
             }
 
-            // Step 3: Download the .seb file
-            const blob = await generateRes.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            const baseName = (quiz.title || `quiz_${quiz.id}`)
-                .replace(/\s*\(Requires SEB\)/gi, '')
-                .replace(/[^a-zA-Z0-9_\- ]/g, '')
-                .trim();
-            a.download = `${baseName} (Requires SEB) - SEB Configuration File.seb`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            // No file download — students generate their own .seb files on the
+            // fly via the per-student launch link the backend wrote into the
+            // quiz instructions.
 
             // Done — build the settings object for the parent to store
             const savedSettings = {
@@ -721,7 +712,7 @@ export function SEBConfigDialog({
                         ) : (
                             <>
                                 <ShieldCheck className="w-3.5 h-3.5" />
-                                Save &amp; Download .seb
+                                Save SEB Configuration
                             </>
                         )}
                     </Button>

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { Search, ArrowUpDown } from "lucide-react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { Search, ArrowUpDown, Check } from "lucide-react";
 import { Quiz, SortKey } from "@/lib/types";
 import { QuizCard } from "@/components/quiz-card";
 import { SEBSettingsDialog } from "@/components/seb-settings-dialog";
@@ -39,6 +39,23 @@ export default function DashboardPage() {
   const [configQuiz, setConfigQuiz] = useState<Quiz | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
 
+  // Success toast (shown after config dialog saves)
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+  const successToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showSuccessToast = useCallback((message: string) => {
+    if (successToastTimerRef.current) clearTimeout(successToastTimerRef.current);
+    setSuccessToast(message);
+    successToastTimerRef.current = setTimeout(() => setSuccessToast(null), 3000);
+  }, []);
+
+  // Clean up the toast timer on unmount
+  useEffect(() => {
+    return () => {
+      if (successToastTimerRef.current) clearTimeout(successToastTimerRef.current);
+    };
+  }, []);
+
   // handlers
   const handleConfigure = useCallback((quiz: Quiz) => {
     setConfigQuiz(quiz);
@@ -72,7 +89,9 @@ export default function DashboardPage() {
                 : q
         )
     );
-  }, [setQuizzes]);
+
+    showSuccessToast("SEB configuration saved");
+  }, [setQuizzes, showSuccessToast]);
 
   // loading / error states
   if (loading) return <DashboardSkeleton />;
@@ -99,6 +118,16 @@ export default function DashboardPage() {
   // main render
   return (
       <div className="min-h-screen bg-background">
+        {/* Success toast */}
+        {successToast && (
+            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[70] animate-in slide-in-from-top-2 fade-in duration-200">
+              <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600 text-white shadow-lg text-sm font-medium">
+                <Check className="w-4 h-4 shrink-0" />
+                {successToast}
+              </div>
+            </div>
+        )}
+
         <main className="mx-auto max-w-7xl px-6 py-8">
           {/* Dev mode banner */}
           {devMode && (
