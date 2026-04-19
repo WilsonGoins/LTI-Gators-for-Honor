@@ -412,6 +412,50 @@ async function updateUserAccessToken(canvasUserId, accessToken, expiresIn) {
   );
 }
 
+// Returns the fields needed to regenerate a student-specific .seb file.
+async function getSEBConfigForStudent(courseId, quizId) {
+  const sql = `
+    SELECT
+      s.preset_name,
+      s.force_fullscreen,
+      s.allow_quit,
+      s.quit_password,
+      s.block_screen_sharing,
+      s.block_virtual_machine,
+      s.disable_spell_check,
+      s.enable_url_filter,
+      s.allowed_url_patterns,
+      s.access_code,
+      f.canvas_quiz_url,
+      f.file_name
+    FROM seb_settings s
+    LEFT JOIN seb_config_files f
+      ON f.course_id = s.course_id AND f.quiz_id = s.quiz_id
+    WHERE s.course_id = $1 AND s.quiz_id = $2
+  `;
+  const { rows } = await queryWithRetry(sql, [courseId, quizId]);
+  return rows[0] ?? null;
+}
+
+// ─── Launch sessions (per-student, per-exam) ────────────────────────────────
+
+async function createLaunchSession({ launchToken, canvasUserId, courseId, quizId, canvasQuizURL, accessCode, expiresInSeconds = 15 * 60 }) {
+  const expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
+  await queryWithRetry(
+    `INSERT INTO launch_sessions
+     (launch_token, canvas_user_id, course_id, quiz_id, canvas_quiz_url, access_code, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [launchToken, canvasUserId, courseId, quizId, canvasQuizURL, accessCode, expiresAt]
+  );
+}
+
+async function updateLaunchSessionConfigKey(launchToken, configKey) {
+  await queryWithRetry(
+    `UPDATE launch_sessions SET config_key = $1 WHERE launch_token = $2`,
+    [configKey, launchToken]
+  );
+}
+
 module.exports = {
   pool,
   unpooledPool,
@@ -425,4 +469,7 @@ module.exports = {
   getUserByCanvasId,
   upsertUser,
   updateUserAccessToken,
+  getSEBConfigForStudent,
+  createLaunchSession,
+  updateLaunchSessionConfigKey,
 };
