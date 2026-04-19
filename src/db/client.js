@@ -375,6 +375,43 @@ async function updateSEBFileLink(courseId, quizId, fileLink) {
   );
 }
 
+async function getUserByCanvasId(canvasUserId) {
+  const { rows } = await queryWithRetry(
+    `SELECT canvas_user_id, refresh_token, access_token, token_expires_at
+     FROM users WHERE canvas_user_id = $1`,
+    [canvasUserId]
+  );
+  return rows[0] ?? null;
+}
+
+async function upsertUser({ canvasUserId, name, email, avatarUrl, canvasDomain, accessToken, refreshToken, expiresIn }) {
+  const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+  await queryWithRetry(
+    `INSERT INTO users (canvas_user_id, name, email, avatar_url, canvas_domain,
+                        access_token, refresh_token, token_expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (canvas_user_id) DO UPDATE SET
+       name = EXCLUDED.name,
+       email = EXCLUDED.email,
+       avatar_url = EXCLUDED.avatar_url,
+       canvas_domain = EXCLUDED.canvas_domain,
+       access_token = EXCLUDED.access_token,
+       refresh_token = EXCLUDED.refresh_token,
+       token_expires_at = EXCLUDED.token_expires_at,
+       updated_at = now()`,
+    [canvasUserId, name, email, avatarUrl, canvasDomain, accessToken, refreshToken, expiresAt]
+  );
+}
+
+async function updateUserAccessToken(canvasUserId, accessToken, expiresIn) {
+  const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+  await queryWithRetry(
+    `UPDATE users SET access_token = $1, token_expires_at = $2, updated_at = now()
+     WHERE canvas_user_id = $3`,
+    [accessToken, expiresAt, canvasUserId]
+  );
+}
+
 module.exports = {
   pool,
   unpooledPool,
@@ -385,4 +422,7 @@ module.exports = {
   getSEBFile,
   clearAccessCode,
   updateSEBFileLink,
+  getUserByCanvasId,
+  upsertUser,
+  updateUserAccessToken,
 };

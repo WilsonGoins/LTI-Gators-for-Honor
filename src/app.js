@@ -372,6 +372,14 @@ app.use('/seb', sebRoutes);
 const quizRoutes = require('./routes/quizzes');
 app.use(quizRoutes);
 
+// Need cookie parser for the OAuth flow
+const cookieParser = require('cookie-parser');
+app.use(cookieParser());
+
+// launch routes (OAuth flow)
+const launchRouter = require('./routes/launch');
+app.use('/', launchRouter);
+
 // status page
 app.get('/', (req, res) => {
   res.send(`
