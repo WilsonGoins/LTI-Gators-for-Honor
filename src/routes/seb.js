@@ -4,6 +4,7 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const config = require('../config');
 const router = express.Router();
 const FormData = require('form-data');
 const seb = require('../services/seb');
@@ -102,35 +103,14 @@ router.post('/generate', express.json(), async (req, res) => {
       canvasQuizURL,
     });
 
-    // Upload .seb file to Canvas course files
-    let fileLink = null;
-    try {
-      await deleteOldCanvasFile(courseId, quizId, canvasToken);
-
-      const folder = await getOrCreateSEBFolder(courseId, canvasToken);
-      const canvasFile = await uploadFileToFolder(folder.id, courseId, filename, sebFile, canvasToken);
-      fileLink = `${CANVAS_URL}/courses/${courseId}/files/${canvasFile.id}/download`;
-      console.log(`✅ SEB file uploaded to Canvas course ${courseId} files`);
-    } catch (uploadErr) {
-      console.error('⚠️ Failed to upload SEB file to Canvas:', uploadErr.message);
-    }
-
     console.log(`✅ SEB config saved for course ${courseId}, quiz ${quizId}`);
 
-    // Save the Canvas file link to DB so cleanup can find it later
+    // Update quiz title and instructions with launch link
     if (fileLink) {
       try {
-        await updateSEBFileLink(courseId, quizId, fileLink);
-      } catch (dbErr) {
-        console.error('⚠️ Failed to save file link to DB:', dbErr.message);
-      }
-    }
-
-    // Update quiz title and instructions with SEB download prompt
-    if (fileLink) {
-      try {
+        const launchURL = `${config.tool.url}/launch/${courseId}/${quizId}`;
         const currentInstructions = await getQuizInstructions(courseId, quizId, quizType, canvasToken);
-        await updateQuizForSEB(courseId, quizId, quizType, quizTitle || '', currentInstructions, fileLink, canvasToken);
+        await updateQuizForSEB(courseId, quizId, quizType, quizTitle || '', currentInstructions, launchURL, canvasToken);
         console.log(`✅ Quiz title and instructions updated for course ${courseId}, quiz ${quizId}`);
       } catch (updateErr) {
         console.error('⚠️ Failed to update quiz title/instructions:', updateErr.message);
@@ -548,7 +528,7 @@ async function uploadFileToFolder(folderId, courseId, fileName, fileBuffer, toke
 }
 
 // update quiz title and instructions to include SEB download link
-async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, currentInstructions, fileLink, token) {
+async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, currentInstructions, launchURL, token) {
   const newTitle = currentTitle.includes('Requires SEB')
     ? currentTitle
     : `${currentTitle} (Requires SEB)`;
@@ -556,17 +536,15 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, curren
   const sebInstructions = `
     <div style="background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
       <h3 style="margin-top: 0; color: #856404;">⚠️ This exam requires Safe Exam Browser (SEB)</h3>
-      <p style="margin-bottom: 8px;">You must use Safe Exam Browser to take this exam. Please complete these steps <strong>before</strong> the exam:</p>
+      <p style="margin-bottom: 8px;">You must use Safe Exam Browser to take this exam. Please complete these steps <strong>when you are ready to begin</strong>:</p>
       <ol style="margin-bottom: 12px;">
         <li>If you haven't already, <a href="https://safeexambrowser.org/download_en.html" target="_blank">download and install Safe Exam Browser</a>.</li>
-        <li><a href="${fileLink}"><strong>Download the SEB Configuration File</strong></a> for this exam.</li>
-        <li>When you are ready to begin, double-click the downloaded <code>.seb</code> file to launch Safe Exam Browser.</li>
+        <li><a href="${launchURL}"><strong>Click here to launch the exam</strong></a>. Your personal exam configuration file will download automatically.</li>
+        <li>Open the downloaded <code>.seb</code> file to launch Safe Exam Browser and begin your exam.</li>
       </ol>
       <p style="margin: 0; font-size: 0.9em; color: #856404;">If you experience technical issues, contact your instructor before the exam deadline.</p>
     </div>
   `.trim();
-
-  let canvasRes;
 
   const cleanedInstructions = currentInstructions
     ? currentInstructions.replace(/<div style="background-color: #fff3cd;[\s\S]*?<\/div>\s*/i, '').trim()
@@ -576,19 +554,14 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, curren
     ? `${sebInstructions}\n${cleanedInstructions}`
     : sebInstructions;
 
+  let canvasRes;
   if (quizType === 'new') {
     canvasRes = await fetch(
       `${CANVAS_URL}/api/quiz/v1/courses/${courseId}/quizzes/${quizId}`,
       {
         method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title: newTitle,
-          instructions: finalInstructions,
-        }),
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newTitle, instructions: finalInstructions }),
       }
     );
   } else {
@@ -596,16 +569,8 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, curren
       `${CANVAS_URL}/api/v1/courses/${courseId}/quizzes/${quizId}`,
       {
         method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          quiz: {
-            title: newTitle,
-            description: finalInstructions,
-          },
-        }),
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quiz: { title: newTitle, description: finalInstructions } }),
       }
     );
   }
@@ -617,6 +582,7 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, curren
 
   return canvasRes.json();
 }
+
 
 // Delete old Canvas file using stored file_link before uploading a new one
 async function deleteOldCanvasFile(courseId, quizId, token) {
