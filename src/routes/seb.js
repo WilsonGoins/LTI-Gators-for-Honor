@@ -315,7 +315,6 @@ router.get('/gate/:courseId/:quizId', async (req, res) => {
     return res.status(500).send('Quiz URL not configured. Contact your instructor.');
   }
 
-  const quizURL = new URL(file.canvas_quiz_url);
   // 5. Build redirect URL with access code (student is already authenticated
   //    because the SEB startURL was the Canvas quiz overview, which handled
   //    login before they clicked "Begin Secure Exam")
@@ -332,7 +331,6 @@ router.get('/gate/:courseId/:quizId', async (req, res) => {
     takeURL.searchParams.set('access_code', file.access_code);
   }
 
-  console.log(`Gate passed: course ${courseId} quiz ${quizId} -> quiz take`);
   return res.redirect(takeURL.toString());
 });
 
