@@ -10,6 +10,16 @@ const seb = require('../services/seb');
 const { saveSEBConfig, getSEBFile, clearAccessCode, updateSEBFileLink } = require('../db/client');
 
 const CANVAS_URL = process.env.CANVAS_URL;
+// Map frontend camelCase override keys to SEB's expected config keys.
+// Only keys whose casing differs between our API and the SEB spec need mapping.
+function normalizeOverrides(raw) {
+  if (!raw) return {};
+  const { urlFilterEnabled, ...rest } = raw;
+  return {
+    ...rest,
+    ...(urlFilterEnabled !== undefined && { URLFilterEnable: urlFilterEnabled }),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // GET /seb/presets
@@ -64,12 +74,13 @@ router.post('/generate', express.json(), async (req, res) => {
 
     // Generate the configuration — startURL is the gate, built internally
     const config = seb.generateConfig({
+      canvasQuizURL,                                   
       courseId,
       quizId,
       preset: preset || 'standard',
       allowedDomains: allowedDomains || [],
       quitPassword: quitPassword || null,
-      overrides: overrides || {},
+      overrides: normalizeOverrides(overrides),
     });
 
     const configKey = seb.computeConfigKey(config);
@@ -299,19 +310,29 @@ router.get('/gate/:courseId/:quizId', async (req, res) => {
   }
 
   // 5. Build redirect URL with access code
+  // 5. Build redirect URL with access code, routed through Canvas login
   if (!file.canvas_quiz_url) {
     return res.status(500).send('Quiz URL not configured. Contact your instructor.');
   }
 
-  const redirectURL = new URL(file.canvas_quiz_url);
-  if (file.access_code) {
-    redirectURL.searchParams.set('access_code', file.access_code);
+  // 5. Build redirect URL with access code (student is already authenticated
+  //    because the SEB startURL was the Canvas quiz overview, which handled
+  //    login before they clicked "Begin Secure Exam")
+  if (!file.canvas_quiz_url) {
+    return res.status(500).send('Quiz URL not configured. Contact your instructor.');
   }
 
-  console.log(`Gate passed: course ${courseId} quiz ${quizId} -> redirecting`);
-  return res.redirect(redirectURL.toString());
-});
+  // Ensure we redirect to /take, not /overview
+  const takeURL = new URL(file.canvas_quiz_url);
+  if (!takeURL.pathname.endsWith('/take')) {
+    takeURL.pathname = takeURL.pathname.replace(/\/$/, '') + '/take';
+  }
+  if (file.access_code) {
+    takeURL.searchParams.set('access_code', file.access_code);
+  }
 
+  return res.redirect(takeURL.toString());
+});
 
 // helper function to find or create the SEB folder in Canvas Files API
 async function getOrCreateSEBFolder(courseId, token) {
@@ -431,18 +452,49 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, curren
     ? currentTitle
     : `${currentTitle} (Requires SEB)`;
 
+  const gateBaseURL = process.env.GATE_BASE_URL;
+  const beginExamURL = `${gateBaseURL}/gate/${courseId}/${quizId}`;
+
   const sebInstructions = `
-    <div style="background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-      <h3 style="margin-top: 0; color: #856404;">⚠️ This exam requires Safe Exam Browser (SEB)</h3>
-      <p style="margin-bottom: 8px;">You must use Safe Exam Browser to take this exam. Please complete these steps <strong>before</strong> the exam:</p>
-      <ol style="margin-bottom: 12px;">
-        <li>If you haven't already, <a href="https://safeexambrowser.org/download_en.html" target="_blank">download and install Safe Exam Browser</a>.</li>
-        <li><a href="${fileLink}"><strong>Download the SEB Configuration File</strong></a> for this exam.</li>
-        <li>When you are ready to begin, double-click the downloaded <code>.seb</code> file to launch Safe Exam Browser.</li>
+  <div style="background-color: #fff7e0; border-left: 4px solid #f0a500; border-radius: 4px; padding: 18px 20px; margin-bottom: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+
+    <h3 style="margin: 0 0 12px; color: #6b4c00; font-size: 1.05em;">
+      🔒 This exam runs in Safe Exam Browser
+    </h3>
+
+    <p style="margin: 0 0 14px; color: #333; line-height: 1.5;">
+      You'll need <strong>Safe Exam Browser (SEB)</strong> and the configuration file for this exam. Set both up before exam day so you're not rushed.
+    </p>
+
+    <div style="background: #ffffff; border-radius: 4px; padding: 14px 16px; margin-bottom: 14px;">
+      <p style="margin: 0 0 8px; font-weight: 600; color: #333; font-size: 0.95em;">One-time setup</p>
+      <ol style="margin: 0; padding-left: 22px; color: #444; line-height: 1.7;">
+        <li><a href="https://safeexambrowser.org/download_en.html" target="_blank" style="color: #0374b5;">Download and install Safe Exam Browser</a> for your operating system.</li>
+        <li><a href="${fileLink}" style="color: #0374b5;"><strong>Download this exam's SEB configuration file</strong></a> (<code>.seb</code>).</li>
       </ol>
-      <p style="margin: 0; font-size: 0.9em; color: #856404;">If you experience technical issues, contact your instructor before the exam deadline.</p>
     </div>
-  `.trim();
+
+    <div style="background: #ffffff; border-radius: 4px; padding: 14px 16px; margin-bottom: 16px;">
+      <p style="margin: 0 0 8px; font-weight: 600; color: #333; font-size: 0.95em;">When you're ready to start</p>
+      <ol style="margin: 0; padding-left: 22px; color: #444; line-height: 1.7;">
+        <li>Double-click the <code>.seb</code> file. Safe Exam Browser will open and load Canvas.</li>
+        <li>Log in to Canvas if prompted, then return to this page.</li>
+        <li>Click <strong>Begin Secure Exam</strong> below, then click Canvas's <strong>Take the Quiz</strong> button on the next screen.</li>
+      </ol>
+    </div>
+
+    <p style="text-align: center; margin: 0 0 8px;">
+      <a href="${beginExamURL}" style="display: inline-block; padding: 12px 32px; background-color: #0374b5; color: #ffffff; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 1em;">
+        Begin Secure Exam →
+      </a>
+    </p>
+
+    <p style="margin: 6px 0 0; font-size: 0.82em; color: #6b4c00; text-align: center;">
+      This button only works inside Safe Exam Browser. If you're seeing this in a regular browser, open the <code>.seb</code> file first.
+    </p>
+
+  </div>
+`.trim();
 
   let canvasRes;
 

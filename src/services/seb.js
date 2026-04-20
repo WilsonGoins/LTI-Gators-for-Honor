@@ -127,6 +127,7 @@ function getDefaultProhibitedProcesses() {
  */
 function generateConfig(options) {
   const {
+    canvasQuizURL,                                
     gateBaseURL = process.env.GATE_BASE_URL,
     courseId,
     quizId,
@@ -136,35 +137,44 @@ function generateConfig(options) {
     overrides = {},
   } = options;
 
-  if (!gateBaseURL || !courseId || !quizId) {
-    throw new Error('gateBaseURL, courseId, and quizId are required');
+  if (!canvasQuizURL || !gateBaseURL || !courseId || !quizId) {
+    throw new Error('canvasQuizURL, gateBaseURL, courseId, and quizId are required');
   }
 
   const presetConfig = SECURITY_PRESETS[preset];
   if (!presetConfig) {
-    throw new Error(`Unknown preset: ${preset}. Available: ${Object.keys(SECURITY_PRESETS).join(', ')}`);
+    throw new Error(`Unknown preset: ${preset}`);
   }
 
-  // startURL points to YOUR gate, not Canvas directly
-  const startURL = `${gateBaseURL}/gate/${courseId}/${quizId}`;
+  // startURL is the Canvas quiz OVERVIEW page (strip /take if present).
+  // Canvas handles login via its native redirect flow, then student clicks
+  // "Begin Secure Exam" which routes back through our gate for access_code.
+  const overviewURL = canvasQuizURL.replace(/\/take\/?$/, '');
+  const startURL = overviewURL;
 
-  let gateDomain;
-  try { gateDomain = new URL(gateBaseURL).host; } catch { gateDomain = null; }
+  // Build allowed-domains list: gate + canvas host (both need to be reachable)
+  let gateDomain, canvasDomain;
+  try { gateDomain = new URL(gateBaseURL).host; } catch {}
+  try { canvasDomain = new URL(canvasQuizURL).host; } catch {}
   const allDomains = [...allowedDomains];
-  if (gateDomain && !allDomains.includes(gateDomain)) {
-    allDomains.push(gateDomain);
-  }
+  if (gateDomain && !allDomains.includes(gateDomain)) allDomains.push(gateDomain);
+  if (canvasDomain && !allDomains.includes(canvasDomain)) allDomains.push(canvasDomain);
 
   const config = {
-    startURL,
-    startURLAllowDeepLink: true,
-    ...presetConfig.settings,
-    URLFilterRules: buildURLFilterRules(allDomains),
-    ...(quitPassword &&
-       { hashedQuitPassword: createHash('sha256').update(quitPassword, 'utf8').digest('hex') }),
-    ...overrides,
-    originatorVersion: 'Gators for Honor LTI 0.1.0',
-  };
+  startURL,
+  startURLAllowDeepLink: true,
+  // Force link clicks to open in the same window. External-domain links
+  // (like Begin Secure Exam button) open as NEW windows by default,
+  // which don't carry the ConfigKeyHash session and break the gate.
+  newBrowserWindowByLinkPolicy: 1,  // 0=block, 1=same window, 2=new window
+  newBrowserWindowByScriptPolicy: 1, // same for window.open() calls
+  ...presetConfig.settings,
+  URLFilterRules: buildURLFilterRules(allDomains),
+  ...(quitPassword &&
+     { hashedQuitPassword: createHash('sha256').update(quitPassword, 'utf8').digest('hex') }),
+  ...overrides,
+  originatorVersion: 'Gators for Honor LTI 0.1.0',
+};
 
   return config;
 }
@@ -175,19 +185,34 @@ function generateConfig(options) {
 
 function buildURLFilterRules(allowedDomains) {
   const rules = [];
-
-  // Always allow the Canvas-related domains
   const defaultDomains = ['*.instructure.com/*'];
-
   const allDomains = [...defaultDomains, ...allowedDomains];
 
   allDomains.forEach((domain) => {
-    rules.push({
-      action: 1,       // 1 = allow
-      active: true,
-      expression: domain.includes('*') ? domain : `${domain}/*`,
-      regex: false,
-    });
+    if (domain.includes('://')) {
+      // Already a full URL pattern
+      rules.push({
+        action: 1, active: true, regex: false,
+        expression: domain.endsWith('/*') ? domain : `${domain}/*`,
+      });
+    } else if (domain.includes('*')) {
+      // Wildcard pattern like *.instructure.com/*
+      rules.push({
+        action: 1, active: true, regex: false,
+        expression: domain.endsWith('/*') ? domain : `${domain}/*`,
+      });
+    } else {
+      // Plain host or host:port — emit explicit http:// and https:// rules.
+      // SEB's filter parser can misread "host:port/*" as scheme:opaque.
+      rules.push({
+        action: 1, active: true, regex: false,
+        expression: `http://${domain}/*`,
+      });
+      rules.push({
+        action: 1, active: true, regex: false,
+        expression: `https://${domain}/*`,
+      });
+    }
   });
 
   return rules;
