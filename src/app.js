@@ -25,6 +25,10 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3002';
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// static favicon file
+const path = require('path');
+app.use(express.static(path.join(__dirname, '..', 'public')));
+
 // Allow Canvas to iframe the tool & remove X-Frame-Options
 app.use((req, res, next) => {
   const canvasUrl = platformConfig.canvasUrl || 'http://localhost:3000';

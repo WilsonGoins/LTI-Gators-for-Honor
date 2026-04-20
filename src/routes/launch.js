@@ -356,6 +356,7 @@ function renderLandingPage({ launchToken, courseId, quizId }) {
     <head>
     <meta charset="utf-8">
     <title>Launch SEB Exam</title>
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96t.png">
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; max-width: 560px; margin: 60px auto; padding: 0 20px; color: #1a1a1a; }
         .card { border: 1px solid #e5e5e5; border-radius: 12px; padding: 32px; background: #fafafa; }

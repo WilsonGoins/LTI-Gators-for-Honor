@@ -19,12 +19,6 @@ const config = {
     apiUrl: process.env.CANVAS_API_URL,
     accessToken: process.env.CANVAS_ACCESS_TOKEN,
   },
-
-  // SEB defaults
-  seb: {
-    defaultQuitPassword: process.env.SEB_DEFAULT_QUIT_PASSWORD || '',
-    defaultAllowedDomain: process.env.SEB_DEFAULT_ALLOWED_DOMAIN || '',
-  },
 };
 
 module.exports = config;
