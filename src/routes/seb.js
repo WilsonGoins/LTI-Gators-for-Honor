@@ -456,29 +456,45 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, curren
   const beginExamURL = `${gateBaseURL}/gate/${courseId}/${quizId}`;
 
   const sebInstructions = `
-    <div style="background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-      <h3 style="margin-top: 0; color: #856404;">⚠️ This exam requires Safe Exam Browser (SEB)</h3>
-      <p style="margin-bottom: 8px;"><strong>Before the exam:</strong></p>
-      <ol style="margin-bottom: 12px;">
-        <li>If you haven't already, <a href="https://safeexambrowser.org/download_en.html" target="_blank">download and install Safe Exam Browser</a>.</li>
-        <li><a href="${fileLink}"><strong>Download the SEB Configuration File</strong></a> for this exam.</li>
+  <div style="background-color: #fff7e0; border-left: 4px solid #f0a500; border-radius: 4px; padding: 18px 20px; margin-bottom: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+
+    <h3 style="margin: 0 0 12px; color: #6b4c00; font-size: 1.05em;">
+      🔒 This exam runs in Safe Exam Browser
+    </h3>
+
+    <p style="margin: 0 0 14px; color: #333; line-height: 1.5;">
+      You'll need <strong>Safe Exam Browser (SEB)</strong> and the configuration file for this exam. Set both up before exam day so you're not rushed.
+    </p>
+
+    <div style="background: #ffffff; border-radius: 4px; padding: 14px 16px; margin-bottom: 14px;">
+      <p style="margin: 0 0 8px; font-weight: 600; color: #333; font-size: 0.95em;">One-time setup</p>
+      <ol style="margin: 0; padding-left: 22px; color: #444; line-height: 1.7;">
+        <li><a href="https://safeexambrowser.org/download_en.html" target="_blank" style="color: #0374b5;">Download and install Safe Exam Browser</a> for your operating system.</li>
+        <li><a href="${fileLink}" style="color: #0374b5;"><strong>Download this exam's SEB configuration file</strong></a> (<code>.seb</code>).</li>
       </ol>
-      <p style="margin-bottom: 8px;"><strong>When you're ready:</strong></p>
-      <ol start="3" style="margin-bottom: 16px;">
-        <li>Double-click the downloaded <code>.seb</code> file to launch Safe Exam Browser.</li>
-        <li>Log into Canvas inside SEB if prompted.</li>
-        <li>Return to this page and click the button below.</li>
-      </ol>
-      <p style="text-align: center; margin: 20px 0 8px;">
-        <a href="${beginExamURL}" style="display: inline-block; padding: 12px 28px; background-color: #0374b5; color: #ffffff; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 1.05em;">
-          Begin Secure Exam →
-        </a>
-      </p>
-      <p style="margin: 8px 0 0; font-size: 0.85em; color: #856404; text-align: center;">
-        This button only works when opened from inside Safe Exam Browser.
-      </p>
     </div>
-  `.trim();
+
+    <div style="background: #ffffff; border-radius: 4px; padding: 14px 16px; margin-bottom: 16px;">
+      <p style="margin: 0 0 8px; font-weight: 600; color: #333; font-size: 0.95em;">When you're ready to start</p>
+      <ol style="margin: 0; padding-left: 22px; color: #444; line-height: 1.7;">
+        <li>Double-click the <code>.seb</code> file. Safe Exam Browser will open and load Canvas.</li>
+        <li>Log in to Canvas if prompted, then return to this page.</li>
+        <li>Click <strong>Begin Secure Exam</strong> below, then click Canvas's <strong>Take the Quiz</strong> button on the next screen.</li>
+      </ol>
+    </div>
+
+    <p style="text-align: center; margin: 0 0 8px;">
+      <a href="${beginExamURL}" style="display: inline-block; padding: 12px 32px; background-color: #0374b5; color: #ffffff; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 1em;">
+        Begin Secure Exam →
+      </a>
+    </p>
+
+    <p style="margin: 6px 0 0; font-size: 0.82em; color: #6b4c00; text-align: center;">
+      This button only works inside Safe Exam Browser. If you're seeing this in a regular browser, open the <code>.seb</code> file first.
+    </p>
+
+  </div>
+`.trim();
 
   let canvasRes;
 
