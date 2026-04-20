@@ -188,44 +188,36 @@ router.get('/launch/:courseId/:quizId/download', async (req, res) => {
 // Ensures we have a refresh token, then redirects to /download.
 // ---------------------------------------------------------------------------
 router.get('/launch/:courseId/:quizId', async (req, res) => {
-  const { courseId, quizId } = req.params;  
-  const canvasUserId = req.cookies?.canvas_user;
+  const { courseId, quizId } = req.params;
 
-  if (canvasUserId) {
-    try {
-      const user = await getUserByCanvasId(canvasUserId);  
-      if (user?.refresh_token) {
-        return res.redirect(`/launch/${courseId}/${quizId}/download`);  
-      }  
-    } catch (err) {
-      console.error('Launch DB error:', err);  
-    }  
-  }  
-
-  // No consent yet — start Canvas OAuth flow
+  // Always run OAuth. Canvas silently skips the consent screen for users
+  // who've already authorized us, so this adds no UX friction for repeat
+  // users — but it guarantees the token we use matches the Canvas user
+  // currently logged in, not whoever last used this browser profile.
   const state = crypto.randomBytes(32).toString('hex');
   const returnTo = `/launch/${courseId}/${quizId}/download`;
 
   res.cookie('canvas_oauth_state', state, {
-    httpOnly: true,  
+    httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/',
     maxAge: 10 * 60 * 1000,
-  });  
+  });
   res.cookie('canvas_oauth_return_to', returnTo, {
-    httpOnly: true,  
+    httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/',
     maxAge: 10 * 60 * 1000,
-  });  
+  });
 
   const authURL = new URL(`${CANVAS_URL}/login/oauth2/auth`);
   authURL.searchParams.set('client_id', CLIENT_ID);
   authURL.searchParams.set('response_type', 'code');
   authURL.searchParams.set('redirect_uri', `${TOOL_URL}/oauth/callback`);
   authURL.searchParams.set('state', state);
+  authURL.searchParams.set('prompt', 'none');  // skip consent when trusted
 
   return res.redirect(authURL.toString());
 });  
@@ -242,6 +234,19 @@ router.get('/oauth/callback', async (req, res) => {
 
   // Canvas returned an error (e.g. user denied)
   if (errorParam) {
+    // login_required means the user isn't logged into Canvas — prompt them to log in first
+    if (errorParam === 'login_required' || errorParam === 'interaction_required') {
+      return res.status(403).send(`
+        <html><body style="font-family:system-ui,sans-serif;max-width:560px;margin:60px auto;padding:0 20px;">
+          <div style="border:1px solid #e5e5e5;border-radius:12px;padding:32px;background:#fafafa;">
+            <h2 style="margin-top:0;">Please log in to Canvas first</h2>
+            <p>You need to be logged into Canvas before launching your exam.</p>
+            <p><a href="${CANVAS_URL}/login" style="color:#0021A5;">Click here to log in to Canvas</a>, then return to your quiz and click the launch link again.</p>
+          </div>
+        </body></html>
+      `);
+    }
+
     return res.status(400).send(`
       <html><body style="font-family:system-ui,sans-serif;max-width:480px;margin:60px auto;text-align:center;">
         <h2>Authorization failed</h2>
