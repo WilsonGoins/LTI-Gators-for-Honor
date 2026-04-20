@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { X, ShieldCheck, Monitor, Globe, Lock, Wifi, Copy, Download, Pencil, Loader2, Check } from "lucide-react";
+import { X, ShieldCheck, Monitor, Globe, Lock, Wifi, Copy, Pencil, Check } from "lucide-react";
 import { Quiz } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { BACKEND_URL } from "@/lib/api";
 
 interface SEBSettingsDialogProps {
   quiz: Quiz | null;
@@ -59,7 +58,6 @@ function SettingRow({
 
 export function SEBSettingsDialog({ quiz, open, courseId, onClose, onEdit }: SEBSettingsDialogProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
-  const [isDownloading, setIsDownloading] = useState(false);
 
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -89,52 +87,6 @@ export function SEBSettingsDialog({ quiz, open, courseId, onClose, onEdit }: SEB
   // Close on backdrop click
   const handleOverlayClick = (e: React.MouseEvent) => {
     if (e.target === overlayRef.current) onClose();
-  };
-
-  const handleDownload = async () => {
-    if (!quiz) return;
-    setIsDownloading(true);
-
-    try {
-      const token = sessionStorage.getItem("seb_token");
-      if (!token) throw new Error("Session expired.");
-
-      // Fetch the file blob from the backend
-      const res = await fetch(`${BACKEND_URL}/seb/download/${courseId}/${quiz.id}`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `Download failed (${res.status})`);
-      }
-
-      // Extract filename from the Content-Disposition header if available
-      const contentDisposition = res.headers.get("Content-Disposition");
-      let filename = `seb_${quiz.title.replace(/\s+/g, "_").toLowerCase()}.seb`;
-      if (contentDisposition) {
-        const match = contentDisposition.match(/filename="([^"]+)"/);
-        if (match && match[1]) filename = match[1];
-      }
-
-      // Create blob URL and trigger download
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Failed to download SEB config:", error);
-    } finally {
-      setIsDownloading(false);
-    }
   };
 
   if (!open || !quiz || !quiz.sebSettings) return null;
@@ -282,24 +234,12 @@ export function SEBSettingsDialog({ quiz, open, courseId, onClose, onEdit }: SEB
               <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-2">
                 Access Code
               </p>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 bg-secondary text-foreground px-3 py-2 rounded-md font-mono text-sm">
-                  {settings.accessCode || "—"}
-                </code>
-                {settings.accessCode && (
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        className="shrink-0"
-                        onClick={() => {
-                            navigator.clipboard.writeText(String(settings.accessCode ?? ""));
-                            showToast("Copied!");
-                        }}
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </Button>
-                )}
-              </div>
+              <code className="block bg-secondary text-foreground px-3 py-2 rounded-md font-mono text-sm">
+                {settings.accessCode || "—"}
+              </code>
+              <p className="text-[11px] text-muted-foreground mt-1.5">
+                Students never see this code. SEB enters it automatically.
+              </p>
             </div>
           </div>
 
@@ -314,20 +254,6 @@ export function SEBSettingsDialog({ quiz, open, courseId, onClose, onEdit }: SEB
               })}
             </p>
             <div className="flex items-center gap-2">
-              <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="gap-1.5"
-                  onClick={handleDownload}
-                  disabled={isDownloading}
-              >
-                {isDownloading ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                    <Download className="w-3.5 h-3.5" />
-                )}
-                {isDownloading ? "Downloading..." : "Download .seb"}
-              </Button>
               <Button
                   variant="default"
                   size="sm"

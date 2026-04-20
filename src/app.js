@@ -25,6 +25,10 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3002';
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// static favicon file
+const path = require('path');
+app.use(express.static(path.join(__dirname, '..', 'public')));
+
 // Allow Canvas to iframe the tool & remove X-Frame-Options
 app.use((req, res, next) => {
   const canvasUrl = platformConfig.canvasUrl || 'http://localhost:3000';
@@ -371,6 +375,14 @@ app.use('/seb', sebRoutes);
 // quiz routes
 const quizRoutes = require('./routes/quizzes');
 app.use(quizRoutes);
+
+// Need cookie parser for the OAuth flow
+const cookieParser = require('cookie-parser');
+app.use(cookieParser());
+
+// launch routes (OAuth flow)
+const launchRouter = require('./routes/launch');
+app.use('/', launchRouter);
 
 // status page
 app.get('/', (req, res) => {

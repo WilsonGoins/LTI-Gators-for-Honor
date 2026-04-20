@@ -4,10 +4,13 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const config = require('../config');
 const router = express.Router();
 const FormData = require('form-data');
 const seb = require('../services/seb');
-const { saveSEBConfig, getSEBFile, clearAccessCode, updateSEBFileLink } = require('../db/client');
+const { saveSEBConfig, getSEBFile,
+        getLaunchSessionByToken, markLaunchSessionUsed, getUserByCanvasId } = require('../db/client');
+const canvasOAuth = require('../services/canvas-oauth');
 
 const CANVAS_URL = process.env.CANVAS_URL;
 
@@ -44,7 +47,6 @@ router.get('/presets', (req, res) => {
 //     accessCode: "a1b2c3..." | null
 //   }
 // ---------------------------------------------------------------------------
-
 router.post('/generate', express.json(), async (req, res) => {
   const canvasToken = process.env.CANVAS_ACCESS_TOKEN;
 
@@ -63,7 +65,7 @@ router.post('/generate', express.json(), async (req, res) => {
     }
 
     // Generate the configuration — startURL is the gate, built internally
-    const config = seb.generateConfig({
+    const sebConfig = seb.generateConfig({
       courseId,
       quizId,
       preset: preset || 'standard',
@@ -72,8 +74,8 @@ router.post('/generate', express.json(), async (req, res) => {
       overrides: overrides || {},
     });
 
-    const configKey = seb.computeConfigKey(config);
-    const sebFile = seb.generateSEBFile(config);
+    const configKey = seb.computeConfigKey(sebConfig);
+    const sebFile = seb.generateSEBFile(sebConfig);
     const baseName = (quizTitle || `quiz_${quizId}`)
       .replace(/\s*\(Requires SEB\)/gi, '')
       .replace(/[^a-zA-Z0-9_\- ]/g, '')
@@ -100,39 +102,16 @@ router.post('/generate', express.json(), async (req, res) => {
       canvasQuizURL,
     });
 
-    // Upload .seb file to Canvas course files
-    let fileLink = null;
-    try {
-      await deleteOldCanvasFile(courseId, quizId, canvasToken);
-
-      const folder = await getOrCreateSEBFolder(courseId, canvasToken);
-      const canvasFile = await uploadFileToFolder(folder.id, courseId, filename, sebFile, canvasToken);
-      fileLink = `${CANVAS_URL}/courses/${courseId}/files/${canvasFile.id}/download`;
-      console.log(`✅ SEB file uploaded to Canvas course ${courseId} files`);
-    } catch (uploadErr) {
-      console.error('⚠️ Failed to upload SEB file to Canvas:');
-    }
-
     console.log(`✅ SEB config saved for course ${courseId}, quiz ${quizId}`);
 
-    // Save the Canvas file link to DB so cleanup can find it later
-    if (fileLink) {
-      try {
-        await updateSEBFileLink(courseId, quizId, fileLink);
-      } catch (dbErr) {
-        console.error('⚠️ Failed to save file link to DB:', dbErr.message);
-      }
-    }
-
-    // Update quiz title and instructions with SEB download prompt
-    if (fileLink) {
-      try {
-        const currentInstructions = await getQuizInstructions(courseId, quizId, quizType, canvasToken);
-        await updateQuizForSEB(courseId, quizId, quizType, quizTitle || '', currentInstructions, fileLink, canvasToken);
-        console.log(`✅ Quiz title and instructions updated for course ${courseId}, quiz ${quizId}`);
-      } catch (updateErr) {
-        console.error('⚠️ Failed to update quiz title/instructions:');
-      }
+    // Update quiz title and instructions with launch link
+    try {
+      const launchURL = `${config.tool.url}/launch/${courseId}/${quizId}`;
+      const currentInstructions = await getQuizInstructions(courseId, quizId, quizType, canvasToken);
+      await updateQuizForSEB(courseId, quizId, quizType, quizTitle || '', currentInstructions, launchURL, canvasToken);
+      console.log(`✅ Quiz title and instructions updated for course ${courseId}, quiz ${quizId}`);
+    } catch (updateErr) {
+      console.error('⚠️ Failed to update quiz title/instructions:', updateErr.message);
     }
 
     // Return the file as a download
@@ -312,121 +291,127 @@ router.get('/gate/:courseId/:quizId', async (req, res) => {
   return res.redirect(redirectURL.toString());
 });
 
+// ---------------------------------------------------------------------------
+// GET /seb/gate-token/:launchToken
+// Per-student SEB validation gate. Validates the Config Key hash, refreshes
+// the student's Canvas OAuth token, then uses /login/session_token to
+// establish a Canvas session and redirect into the quiz with the access
+// code preserved — no login form shown to the student.
+// ---------------------------------------------------------------------------
+router.get('/gate-token/:launchToken', async (req, res) => {
+  const { launchToken } = req.params;
 
-// helper function to find or create the SEB folder in Canvas Files API
-async function getOrCreateSEBFolder(courseId, token) {
-  const folderName = 'SEB Configuration Files';
-  
-  // Try to find the folder by path first
-  const searchRes = await fetch(
-    `${CANVAS_URL}/api/v1/courses/${courseId}/folders/by_path/${encodeURIComponent(folderName)}`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  
-  if (searchRes.ok) {
-    const folders = await searchRes.json();
-    if (Array.isArray(folders) && folders.length > 0) {
-      return folders[folders.length - 1];
-    }
-  }
-  
-  const rootRes = await fetch(
-    `${CANVAS_URL}/api/v1/courses/${courseId}/folders/root`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!rootRes.ok) {
-    throw new Error(`Failed to get root folder (${rootRes.status})`);
-  }
-  const rootFolder = await rootRes.json();
-  
-  const createRes = await fetch(
-    `${CANVAS_URL}/api/v1/courses/${courseId}/folders`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: folderName,
-        parent_folder_id: rootFolder.id,
-      }),
-    }
-  );
-  
-  if (!createRes.ok) {
-    const err = await createRes.text();
-    throw new Error(`Failed to create SEB folder (${createRes.status}): ${err}`);
-  }
-  
-  return createRes.json();
-}
-
-// helper to add file to folder
-async function uploadFileToFolder(folderId, courseId, fileName, fileBuffer, token) {
-  const notifyRes = await fetch(
-    `${CANVAS_URL}/api/v1/courses/${courseId}/files`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: fileName,
-        parent_folder_id: folderId,
-        content_type: 'application/octet-stream',
-        size: fileBuffer.length,
-        on_duplicate: 'overwrite',
-      }),
-    }
-  );
-
-  if (!notifyRes.ok) {
-    const err = await notifyRes.text();
-    throw new Error(`Canvas file notify failed (${notifyRes.status}): ${err}`);
+  // 1. Header check — SEB always sends this
+  const configKeyHash = req.headers['x-safeexambrowser-configkeyhash'];
+  if (!configKeyHash) {
+    return res.status(403).send(`
+      <html>
+      <head><title>SEB Required</title></head>
+      <body style="font-family:system-ui,sans-serif;max-width:480px;margin:60px auto;text-align:center;">
+        <h2>Safe Exam Browser Required</h2>
+        <p>This exam must be opened using Safe Exam Browser.</p>
+        <p>Please open the <code>.seb</code> configuration file provided by your instructor.</p>
+      </body>
+      </html>
+    `);
   }
 
-  const { upload_url, upload_params } = await notifyRes.json();
-
-  const form = new FormData();
-  for (const [key, value] of Object.entries(upload_params)) {
-    form.append(key, String(value));
+  // 2. Look up the launch session
+  let session;
+  try {
+    session = await getLaunchSessionByToken(launchToken);
+  } catch (err) {
+    console.error('Gate DB error:', err);
+    return res.status(500).send('Internal server error.');
   }
-  form.append('file', fileBuffer, {
-    filename: fileName,
-    contentType: 'application/octet-stream',
-  });
 
-  const uploadRes = await fetch(upload_url, {
-    method: 'POST',
-    body: form.getBuffer(),
-    headers: form.getHeaders(),
-    redirect: 'manual',
-  });
+  if (!session) {
+    return res.status(404).send('Launch session not found. Re-download your .seb file.');
+  }
+  if (session.used_at) {
+    return res.status(403).send('This launch link has already been used. Re-download your .seb file.');
+  }
+  if (new Date(session.expires_at) < new Date()) {
+    return res.status(403).send('This launch link has expired. Re-download your .seb file.');
+  }
+  if (!session.config_key) {
+    return res.status(500).send('Launch session missing Config Key. Contact your instructor.');
+  }
 
-  if (uploadRes.status === 301 || uploadRes.status === 302 || uploadRes.status === 303) {
-    const confirmUrl = uploadRes.headers.get('Location');
-    const confirmRes = await fetch(confirmUrl, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
+  // 3. Verify the Config Key hash
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.get('host');
+  const requestURL = `${proto}://${host}${req.originalUrl}`;
+
+  if (!seb.verifyConfigKeyHash(requestURL, session.config_key, configKeyHash)) {
+    console.log(`Gate rejected: CK mismatch for token ${launchToken.slice(0, 8)}…`);
+    return res.status(403).send(`
+      <html>
+      <head><title>Invalid Configuration</title></head>
+      <body style="font-family:system-ui,sans-serif;max-width:480px;margin:60px auto;text-align:center;">
+        <h2>Invalid SEB Configuration</h2>
+        <p>Your SEB configuration doesn't match what's registered for this exam.</p>
+        <p>Please re-download the latest <code>.seb</code> file and try again.</p>
+      </body>
+      </html>
+    `);
+  }
+
+  // 4. Look up the student's refresh token
+  let user;
+  try {
+    user = await getUserByCanvasId(session.canvas_user_id);
+  } catch (err) {
+    console.error('Gate user lookup error:', err);
+    return res.status(500).send('Failed to look up your account.');
+  }
+  if (!user?.refresh_token) {
+    return res.status(500).send('Your Canvas authorization has expired. Re-download your .seb file.');
+  }
+
+  // 5. Refresh access token
+  let accessToken;
+  try {
+    accessToken = await canvasOAuth.refreshAccessToken({
+      canvasUserId: session.canvas_user_id,
+      refreshToken: user.refresh_token,
     });
-    if (!confirmRes.ok) {
-      throw new Error(`Canvas file confirm failed (${confirmRes.status})`);
-    }
-    return confirmRes.json();
+  } catch (err) {
+    console.error('Gate token refresh error:', err);
+    return res.status(500).send('Failed to authenticate with Canvas. Re-download your .seb file.');
   }
 
-  if (!uploadRes.ok) {
-    const err = await uploadRes.text();
-    throw new Error(`Canvas file upload failed (${uploadRes.status}): ${err}`);
+  // 6. Build the quiz URL with access code
+  const quizURL = new URL(session.canvas_quiz_url);
+  if (session.access_code) {
+    quizURL.searchParams.set('access_code', session.access_code);
   }
 
-  return uploadRes.json();
-}
+  // 7. Ask Canvas for a session URL
+  let sessionURL;
+  try {
+    sessionURL = await canvasOAuth.getSessionURL({
+      accessToken,
+      returnTo: quizURL.toString(),
+    });
+  } catch (err) {
+    console.error('Gate session_token error:', err);
+    return res.status(500).send('Failed to establish Canvas session.');
+  }
+
+  // 8. Burn the launch token (best effort)
+  try {
+    await markLaunchSessionUsed(launchToken);
+  } catch (err) {
+    console.warn('Failed to mark launch token used:', err.message);
+  }
+
+  console.log(`✅ Gate passed: user ${session.canvas_user_id}, course ${session.course_id}, quiz ${session.quiz_id}`);
+  return res.redirect(sessionURL);
+});
 
 // update quiz title and instructions to include SEB download link
-async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, currentInstructions, fileLink, token) {
+async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, currentInstructions, launchURL, token) {
   const newTitle = currentTitle.includes('Requires SEB')
     ? currentTitle
     : `${currentTitle} (Requires SEB)`;
@@ -434,17 +419,15 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, curren
   const sebInstructions = `
     <div style="background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
       <h3 style="margin-top: 0; color: #856404;">⚠️ This exam requires Safe Exam Browser (SEB)</h3>
-      <p style="margin-bottom: 8px;">You must use Safe Exam Browser to take this exam. Please complete these steps <strong>before</strong> the exam:</p>
+      <p style="margin-bottom: 8px;">You must use Safe Exam Browser to take this exam. Please complete these steps <strong>when you are ready to begin</strong>:</p>
       <ol style="margin-bottom: 12px;">
         <li>If you haven't already, <a href="https://safeexambrowser.org/download_en.html" target="_blank">download and install Safe Exam Browser</a>.</li>
-        <li><a href="${fileLink}"><strong>Download the SEB Configuration File</strong></a> for this exam.</li>
-        <li>When you are ready to begin, double-click the downloaded <code>.seb</code> file to launch Safe Exam Browser.</li>
+        <li><a href="${launchURL}"><strong>Click here to launch the exam</strong></a>. Your personal exam configuration file will download automatically.</li>
+        <li>Open the downloaded <code>.seb</code> file to launch Safe Exam Browser and begin your exam.</li>
       </ol>
       <p style="margin: 0; font-size: 0.9em; color: #856404;">If you experience technical issues, contact your instructor before the exam deadline.</p>
     </div>
   `.trim();
-
-  let canvasRes;
 
   const cleanedInstructions = currentInstructions
     ? currentInstructions.replace(/<div style="background-color: #fff3cd;[\s\S]*?<\/div>\s*/i, '').trim()
@@ -454,19 +437,14 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, curren
     ? `${sebInstructions}\n${cleanedInstructions}`
     : sebInstructions;
 
+  let canvasRes;
   if (quizType === 'new') {
     canvasRes = await fetch(
       `${CANVAS_URL}/api/quiz/v1/courses/${courseId}/quizzes/${quizId}`,
       {
         method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title: newTitle,
-          instructions: finalInstructions,
-        }),
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newTitle, instructions: finalInstructions }),
       }
     );
   } else {
@@ -474,16 +452,8 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, curren
       `${CANVAS_URL}/api/v1/courses/${courseId}/quizzes/${quizId}`,
       {
         method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          quiz: {
-            title: newTitle,
-            description: finalInstructions,
-          },
-        }),
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quiz: { title: newTitle, description: finalInstructions } }),
       }
     );
   }
@@ -494,30 +464,6 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, curren
   }
 
   return canvasRes.json();
-}
-
-// Delete old Canvas file using stored file_link before uploading a new one
-async function deleteOldCanvasFile(courseId, quizId, token) {
-  const oldFile = await getSEBFile(courseId, quizId);
-  if (!oldFile?.file_link) return;
-
-  const match = oldFile.file_link.match(/\/files\/(\d+)\//);
-  if (!match) return;
-
-  const fileId = match[1];
-  try {
-    const delRes = await fetch(`${CANVAS_URL}/api/v1/files/${fileId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (delRes.ok) {
-      console.log(`✅ Deleted old Canvas file ${fileId} before re-upload`);
-    } else {
-      console.warn(`⚠️ Failed to delete old Canvas file ${fileId} (${delRes.status})`);
-    }
-  } catch (err) {
-    console.warn(`⚠️ Error deleting old Canvas file: ${err.message}`);
-  }
 }
 
 async function getQuizInstructions(courseId, quizId, quizType, token) {

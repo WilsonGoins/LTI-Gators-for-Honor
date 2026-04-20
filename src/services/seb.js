@@ -130,6 +130,7 @@ function generateConfig(options) {
     gateBaseURL = process.env.GATE_BASE_URL,
     courseId,
     quizId,
+    launchToken = null,
     preset = 'standard',
     allowedDomains = [],
     quitPassword = null,
@@ -145,8 +146,12 @@ function generateConfig(options) {
     throw new Error(`Unknown preset: ${preset}. Available: ${Object.keys(SECURITY_PRESETS).join(', ')}`);
   }
 
-  // startURL points to YOUR gate, not Canvas directly
-  const startURL = `${gateBaseURL}/gate/${courseId}/${quizId}`;
+  // startURL points to YOUR gate, not Canvas directly.
+  // If a launchToken is provided, use the per-student token gate; otherwise
+  // fall back to the legacy per-quiz gate.
+  const startURL = launchToken
+    ? `${gateBaseURL}/gate-token/${launchToken}`
+    : `${gateBaseURL}/gate/${courseId}/${quizId}`;
 
   let gateDomain;
   try { gateDomain = new URL(gateBaseURL).host; } catch { gateDomain = null; }
