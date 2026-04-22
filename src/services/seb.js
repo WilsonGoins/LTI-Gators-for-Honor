@@ -5,6 +5,12 @@ const zlib = require('zlib');
 const { build } = require('plist');
 
 // Security Presets which map to the setup wizard's dropdown
+//
+// Note: `allowQuit: true` is set across all presets so students can always
+// exit SEB without a password. Per the SEB spec
+// (https://safeexambrowser.org/developer/seb-config-key.html), the absence
+// of a `hashedQuitPassword` combined with `allowQuit: true` lets students
+// quit freely via the quit button or Ctrl+Q / Cmd+Q.
 
 const SECURITY_PRESETS = {
   standard: {
@@ -12,7 +18,7 @@ const SECURITY_PRESETS = {
     description: 'Lockdown browser, fullscreen, no screen sharing',
     settings: {
       browserViewMode: 1,           // Fullscreen
-      allowQuit: false,
+      allowQuit: true,
       allowSpellCheck: false,
       allowDictionaryLookup: false,
       allowScreenSharing: false,
@@ -33,7 +39,7 @@ const SECURITY_PRESETS = {
     description: 'All restrictions enabled, VM blocking, clipboard disabled',
     settings: {
       browserViewMode: 1,
-      allowQuit: false,
+      allowQuit: true,
       allowSpellCheck: false,
       allowDictionaryLookup: false,
       allowScreenSharing: false,
@@ -57,7 +63,7 @@ const SECURITY_PRESETS = {
     description: 'Basic lockdown, allows specified reference URLs',
     settings: {
       browserViewMode: 1,
-      allowQuit: false,
+      allowQuit: true,
       allowSpellCheck: true,
       allowDictionaryLookup: true,
       allowScreenSharing: false,
@@ -78,7 +84,7 @@ const SECURITY_PRESETS = {
     description: 'Controlled environment with proctor password',
     settings: {
       browserViewMode: 1,
-      allowQuit: true,              // Proctors can quit with password
+      allowQuit: true,
       allowSpellCheck: false,
       allowDictionaryLookup: false,
       allowScreenSharing: false,
@@ -121,7 +127,6 @@ function getDefaultProhibitedProcesses() {
  * @param {string} options.startURL          - The Canvas quiz URL
  * @param {string} options.preset            - Security preset name (standard|high|openBook|testingCenter)
  * @param {string[]} options.allowedDomains  - Domains to whitelist in URL filter
- * @param {string} [options.quitPassword]    - Password to exit SEB
  * @param {Object} [options.overrides]       - Manual overrides for any SEB setting
  * @returns {Object} Complete SEB configuration object
  */
@@ -133,7 +138,6 @@ function generateConfig(options) {
     launchToken = null,
     preset = 'standard',
     allowedDomains = [],
-    quitPassword = null,
     overrides = {},
   } = options;
 
@@ -165,9 +169,11 @@ function generateConfig(options) {
     startURLAllowDeepLink: true,
     ...presetConfig.settings,
     URLFilterRules: buildURLFilterRules(allDomains),
-    ...(quitPassword &&
-       { hashedQuitPassword: createHash('sha256').update(quitPassword, 'utf8').digest('hex') }),
     ...overrides,
+    // Force allowQuit = true regardless of preset or override so students can
+    // always exit SEB. Without a `hashedQuitPassword` key present, SEB will
+    // not prompt for a password on quit.
+    allowQuit: true,
     originatorVersion: 'Gators for Honor LTI 0.1.0',
   };
 

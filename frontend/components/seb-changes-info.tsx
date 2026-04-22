@@ -5,7 +5,6 @@ import { HelpCircle, X, KeyRound, BookText, Type } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ConfigOverrides {
-    allowQuit: boolean;
     allowScreenSharing: boolean;
     allowVirtualMachine: boolean;
     allowSpellCheck: boolean;

@@ -38,7 +38,7 @@ router.get('/launch/file/:launchToken', async (req, res) => {
 
   try {
     const { rows } = await require('../db/client').pool.query(
-      `SELECT ls.*, s.preset_name, s.force_fullscreen, s.allow_quit, s.quit_password,
+      `SELECT ls.*, s.preset_name, s.force_fullscreen,
               s.block_screen_sharing, s.block_virtual_machine, s.disable_spell_check,
               s.enable_url_filter, s.allowed_url_patterns,
               f.file_name
@@ -66,10 +66,8 @@ router.get('/launch/file/:launchToken', async (req, res) => {
       launchToken,
       preset: session.preset_name || 'standard',
       allowedDomains,
-      quitPassword: session.quit_password || null,
       overrides: {
         browserViewMode: session.force_fullscreen ? 1 : 0,
-        allowQuit: session.allow_quit ?? false,
         allowScreenSharing: !(session.block_screen_sharing ?? true),
         allowVirtualMachine: !(session.block_virtual_machine ?? true),
         allowSpellCheck: !(session.disable_spell_check ?? true),
@@ -147,8 +145,7 @@ router.get('/launch/:courseId/:quizId/download', async (req, res) => {
     : (quizConfig.allowed_url_patterns || []);
     
     const overrides = {
-      browserViewMode: quizConfig.force_fullscreen ? 1 : 0,  
-      allowQuit: quizConfig.allow_quit ?? false,
+      browserViewMode: quizConfig.force_fullscreen ? 1 : 0,
       allowScreenSharing: !(quizConfig.block_screen_sharing ?? true),
       allowVirtualMachine: !(quizConfig.block_virtual_machine ?? true),
       allowSpellCheck: !(quizConfig.disable_spell_check ?? true),
@@ -161,7 +158,6 @@ router.get('/launch/:courseId/:quizId/download', async (req, res) => {
         launchToken,
         preset: presetName,
         allowedDomains,
-        quitPassword: quizConfig.quit_password || null,
         overrides,
     });  
     const configKey = seb.computeConfigKey(sebConfig);
@@ -217,7 +213,6 @@ router.get('/launch/:courseId/:quizId', async (req, res) => {
   authURL.searchParams.set('response_type', 'code');
   authURL.searchParams.set('redirect_uri', `${TOOL_URL}/oauth/callback`);
   authURL.searchParams.set('state', state);
-  authURL.searchParams.set('prompt', 'none');  // skip consent when trusted
 
   return res.redirect(authURL.toString());
 });  
@@ -391,7 +386,7 @@ function renderLandingPage({ launchToken, courseId, quizId }) {
         <strong>Next steps:</strong>
         <ol>
             <li>Wait for the <code>.seb</code> file to finish downloading.</li>
-            <li>Open the downloaded file — Safe Exam Browser will launch automatically.</li>
+            <li>Open the downloaded file, then Safe Exam Browser will launch automatically.</li>
             <li>Complete your exam inside Safe Exam Browser.</li>
         </ol>
         </div>

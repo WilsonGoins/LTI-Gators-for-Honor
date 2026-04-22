@@ -37,7 +37,6 @@ interface Preset {
 
 // Default overrides — these map to the SEB config toggles
 interface ConfigOverrides {
-    allowQuit: boolean;
     allowScreenSharing: boolean;
     allowVirtualMachine: boolean;
     allowSpellCheck: boolean;
@@ -45,34 +44,30 @@ interface ConfigOverrides {
 }
 
 // Which field triggered the current toast error
-type ToastField = "accessCode" | "allowedDomains" | "quitPassword" | null;
+type ToastField = "accessCode" | "allowedDomains" | null;
 
 
 // What each preset defaults to (so toggles reset when you switch presets)
 const PRESET_DEFAULTS: Record<string, ConfigOverrides> = {
     standard: {
-        allowQuit: false,
         allowScreenSharing: false,
         allowVirtualMachine: false,
         allowSpellCheck: false,
         urlFilterEnabled: true,
     },
     high: {
-        allowQuit: false,
         allowScreenSharing: false,
         allowVirtualMachine: false,
         allowSpellCheck: false,
         urlFilterEnabled: true,
     },
     openBook: {
-        allowQuit: false,
         allowScreenSharing: false,
         allowVirtualMachine: false,
         allowSpellCheck: true,
         urlFilterEnabled: false,
     },
     testingCenter: {
-        allowQuit: false,
         allowScreenSharing: false,
         allowVirtualMachine: false,
         allowSpellCheck: false,
@@ -156,8 +151,7 @@ export function SEBConfigDialog({
         PRESET_DEFAULTS.standard
     );
     const [allowedDomains, setAllowedDomains] = useState("");
-    const [quitPassword, setQuitPassword] = useState("");
-    const [accessCode, setConfigAccessCode] = useState("");  
+    const [accessCode, setConfigAccessCode] = useState("");
     const [isEditingAccessCode, setIsEditingAccessCode] = useState(false);
     const accessCodeInputRef = useRef<HTMLInputElement>(null);
 
@@ -255,7 +249,6 @@ export function SEBConfigDialog({
                         const s = await res.json();
                         setSelectedPreset(s.securityLevel || "standard");
                         setOverrides({
-                            allowQuit: s.allowQuit ?? false,
                             allowScreenSharing: s.allowScreenSharing ?? false,
                             allowVirtualMachine: s.allowVirtualMachine ?? false,
                             allowSpellCheck: s.allowSpellCheck ?? false,
@@ -266,9 +259,8 @@ export function SEBConfigDialog({
                                 ? s.allowedDomains.join(", ")
                                 : canvasUrl ? new URL(canvasUrl).hostname : ""
                         );
-                        setQuitPassword(s.quitPassword || "");
-                        setConfigAccessCode(s.accessCode || quiz.accessCode || generateRandomCode());                        
-                        setLoadedQuizId(quiz.id);   
+                        setConfigAccessCode(s.accessCode || quiz.accessCode || generateRandomCode());
+                        setLoadedQuizId(quiz.id);
 
                         return;
                     }
@@ -281,7 +273,6 @@ export function SEBConfigDialog({
             setSelectedPreset("standard");
             setOverrides(PRESET_DEFAULTS.standard);
             setAllowedDomains(canvasUrl ? new URL(canvasUrl).hostname : "");
-            setQuitPassword("");
             setConfigAccessCode(quiz.accessCode || generateRandomCode());
             setLoadedQuizId(quiz.id);
         };
@@ -312,7 +303,7 @@ export function SEBConfigDialog({
     }, [allowedDomains]);
 
     // Whether any conditional sub-sections are visible below the toggles
-    const hasVisibleSubFields = overrides.urlFilterEnabled || overrides.allowQuit;
+    const hasVisibleSubFields = overrides.urlFilterEnabled;
 
     // ── Save handler ─────────────────────────────────────────────────────────
     const handleSave = useCallback(async () => {
@@ -323,16 +314,10 @@ export function SEBConfigDialog({
             showToast("Access code must be at least 5 characters.", "accessCode");
             return;
         }
-        
+
         // Validate allowed domains when URL Filtering is enabled
         if (overrides.urlFilterEnabled && !hasAllowedDomains()) {
             showToast("At least one allowed domain is required when URL filtering is enabled.", "allowedDomains");
-            return;
-        }
-
-        // Validate quit password when Allow Quit is enabled
-        if (overrides.allowQuit && !quitPassword.trim()) {
-            showToast("Quit password cannot be blank.", "quitPassword");
             return;
         }
 
@@ -374,11 +359,10 @@ export function SEBConfigDialog({
                     canvasQuizURL,
                     preset: selectedPreset,
                     allowedDomains: domains,
-                    quitPassword: quitPassword || null,
                     overrides,
                     accessCode: accessCodeValue,
                     quizTitle: quiz.title,
-                    quizType: quiz.quizType,    
+                    quizType: quiz.quizType,
                 }),
             });
 
@@ -394,7 +378,6 @@ export function SEBConfigDialog({
             // Done — build the settings object for the parent to store
             const savedSettings = {
                 securityLevel: selectedPreset as "standard" | "high" | "openBook" | "testingCenter",
-                allowQuit: overrides.allowQuit,
                 allowScreenSharing: overrides.allowScreenSharing,
                 allowVirtualMachine: overrides.allowVirtualMachine,
                 allowSpellCheck: overrides.allowSpellCheck,
@@ -402,7 +385,6 @@ export function SEBConfigDialog({
                 urlFilterEnabled: overrides.urlFilterEnabled,
                 allowedDomains: domains,
                 accessCode: accessCodeValue,
-                quitPassword: quitPassword || undefined,
                 configuredAt: new Date().toISOString(),
             };
 
@@ -414,11 +396,11 @@ export function SEBConfigDialog({
         } finally {
             setSaving(false);
         }
-    }, [quiz, courseId, canvasUrl, selectedPreset, overrides, allowedDomains, quitPassword, accessCode, hasAllowedDomains, onSaved, onClose]);
+    }, [quiz, courseId, canvasUrl, selectedPreset, overrides, allowedDomains, accessCode, hasAllowedDomains, onSaved, onClose, showToast]);
 
     // ── Render ───────────────────────────────────────────────────────────────
     if (!open || !quiz) return null;
-    const isLoadingSettings = !quiz || loadedQuizId !== quiz.id;
+    const isLoadingSettings = loadedQuizId !== quiz.id;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -558,13 +540,6 @@ export function SEBConfigDialog({
                                         checked={overrides.urlFilterEnabled}
                                         onChange={(v) => setOverride("urlFilterEnabled", v)}
                                     />
-                                    <ToggleRow
-                                        icon={X}
-                                        label="Allow Quit"
-                                        description="Let students quit SEB with a password"
-                                        checked={overrides.allowQuit}
-                                        onChange={(v) => setOverride("allowQuit", v)}
-                                    />
                                 </div>
                             </div>
 
@@ -601,36 +576,6 @@ export function SEBConfigDialog({
                                 </div>
                             )}
 
-                            {/* Quit Password — only shown when Allow Quit is enabled */}
-                            {overrides.allowQuit && (
-                                <div>
-                                    <label className="text-sm font-medium text-foreground">
-                                        Quit Password
-                                    </label>
-                                    <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                                        Students must enter this password to exit SEB during the exam.
-                                    </p>
-                                    <input
-                                        type="text"
-                                        value={quitPassword}
-                                        onChange={(e) => {
-                                            setQuitPassword(e.target.value);
-                                            if (toast) clearToast();
-                                        }}
-                                        onBlur={() => {
-                                            if (!quitPassword.trim()) {
-                                                showToast("Quit password cannot be blank.", "quitPassword");
-                                            }
-                                        }}
-                                        placeholder="Enter a quit password"
-                                        className={cn(
-                                            "w-full h-9 px-3 rounded-md border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow",
-                                            toastField === "quitPassword" && "border-destructive focus:ring-destructive/30"
-                                        )}
-                                    />
-                                </div>
-                            )}
-
                             {/* Access Code */}
                             <div className="h-px bg-border" />
                             <div>
@@ -651,7 +596,7 @@ export function SEBConfigDialog({
                                             value={accessCode}
                                             onChange={(e) => {
                                                 setConfigAccessCode(e.target.value);     // clear error as they type
-                                                if (toast) clearToast(); 
+                                                if (toast) clearToast();
                                             }}
 
                                             onBlur={() => {
