@@ -148,6 +148,7 @@ export function SEBConfigDialog({
     // Presets from backend
     const [presets, setPresets] = useState<Preset[]>([]);
     const [presetsLoaded, setPresetsLoaded] = useState(false);
+    const [loadedQuizId, setLoadedQuizId] = useState<string | null>(null);
 
     // Form state
     const [selectedPreset, setSelectedPreset] = useState("standard");
@@ -191,6 +192,10 @@ export function SEBConfigDialog({
         };
     }, []);
 
+    // Reset loaded quiz ID when dialog is closed, so settings reload next time
+    useEffect(() => {
+    if (!open) setLoadedQuizId(null);
+}, [open]);
 
     // Fetch presets on first open
     useEffect(() => {
@@ -262,7 +267,9 @@ export function SEBConfigDialog({
                                 : canvasUrl ? new URL(canvasUrl).hostname : ""
                         );
                         setQuitPassword(s.quitPassword || "");
-                        setConfigAccessCode(s.accessCode || quiz.accessCode || generateRandomCode());
+                        setConfigAccessCode(s.accessCode || quiz.accessCode || generateRandomCode());                        
+                        setLoadedQuizId(quiz.id);   
+
                         return;
                     }
                 } catch (err) {
@@ -276,6 +283,7 @@ export function SEBConfigDialog({
             setAllowedDomains(canvasUrl ? new URL(canvasUrl).hostname : "");
             setQuitPassword("");
             setConfigAccessCode(quiz.accessCode || generateRandomCode());
+            setLoadedQuizId(quiz.id);
         };
 
         loadSettings();
@@ -410,6 +418,7 @@ export function SEBConfigDialog({
 
     // ── Render ───────────────────────────────────────────────────────────────
     if (!open || !quiz) return null;
+    const isLoadingSettings = !quiz || loadedQuizId !== quiz.id;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -465,229 +474,237 @@ export function SEBConfigDialog({
                         </div>
                     )}
 
-                    {/* Security Preset */}
-                    <div>
-                        <p id="security-preset-label" className="text-sm font-medium text-foreground">
-                            Security Preset
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                            Choose a baseline, then customize individual settings below.
-                        </p>
-                        <div role="group" aria-labelledby="security-preset-label" className="grid grid-cols-2 gap-2">
-                            {presets.map((preset) => (
-                                <button
-                                    key={preset.id}
-                                    onClick={() => handlePresetChange(preset.id)}
-                                    className={cn(
-                                        "text-left px-3 py-2.5 rounded-lg border transition-all duration-150",
-                                        selectedPreset === preset.id
-                                            ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                                            : "border-border hover:border-primary/30 hover:bg-muted/50"
-                                    )}
-                                >
-                                    <p
+                    {isLoadingSettings ? (
+                        <div className="flex items-center justify-center py-16">
+                            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                        </div>
+                    ) : (
+                        <>
+                            {/* Security Preset */}
+                            <div>
+                                <p id="security-preset-label" className="text-sm font-medium text-foreground">
+                                    Security Preset
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                                    Choose a baseline, then customize individual settings below.
+                                </p>
+                                <div role="group" aria-labelledby="security-preset-label" className="grid grid-cols-2 gap-2">
+                                    {presets.map((preset) => (
+                                        <button
+                                            key={preset.id}
+                                            onClick={() => handlePresetChange(preset.id)}
+                                            className={cn(
+                                                "text-left px-3 py-2.5 rounded-lg border transition-all duration-150",
+                                                selectedPreset === preset.id
+                                                    ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                                                    : "border-border hover:border-primary/30 hover:bg-muted/50"
+                                            )}
+                                        >
+                                            <p
+                                                className={cn(
+                                                    "text-sm font-medium",
+                                                    selectedPreset === preset.id
+                                                        ? "text-primary"
+                                                        : "text-foreground"
+                                                )}
+                                            >
+                                                {preset.name}
+                                            </p>
+                                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                                                {preset.description}
+                                            </p>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Divider */}
+                            <div className="h-px bg-border" />
+
+                            {/* Settings Toggles */}
+                            <div>
+                                <label className="text-sm font-medium text-foreground">
+                                    Security Settings
+                                </label>
+                                <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                                    Fine-tune what students can and cannot do during the exam.
+                                </p>
+                                <div className="space-y-0.5">
+                                    <ToggleRow
+                                        icon={Monitor}
+                                        label="Allow Screen Sharing"
+                                        description="Let students share their screen with other apps"
+                                        checked={overrides.allowScreenSharing}
+                                        onChange={(v) => setOverride("allowScreenSharing", v)}
+                                    />
+                                    <ToggleRow
+                                        icon={Monitor}
+                                        label="Allow Virtual Machine"
+                                        description="Allow SEB to run inside a VM (VMware, VirtualBox)"
+                                        checked={overrides.allowVirtualMachine}
+                                        onChange={(v) => setOverride("allowVirtualMachine", v)}
+                                    />
+                                    <ToggleRow
+                                        icon={Keyboard}
+                                        label="Allow Spell Check"
+                                        description="Enable the browser's built-in spell checker"
+                                        checked={overrides.allowSpellCheck}
+                                        onChange={(v) => setOverride("allowSpellCheck", v)}
+                                    />
+                                    <ToggleRow
+                                        icon={Globe}
+                                        label="URL Filtering"
+                                        description="Restrict navigation to allowed domains only"
+                                        checked={overrides.urlFilterEnabled}
+                                        onChange={(v) => setOverride("urlFilterEnabled", v)}
+                                    />
+                                    <ToggleRow
+                                        icon={X}
+                                        label="Allow Quit"
+                                        description="Let students quit SEB with a password"
+                                        checked={overrides.allowQuit}
+                                        onChange={(v) => setOverride("allowQuit", v)}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Thin divider — only shown when sub-fields are visible */}
+                            {hasVisibleSubFields && <div className="h-px bg-border" />}
+
+                            {/* Allowed Domains — only shown when URL Filtering is enabled */}
+                            {overrides.urlFilterEnabled && (
+                                <div>
+                                    <label className="text-sm font-medium text-foreground">
+                                        Allowed Domains
+                                    </label>
+                                    <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                                        Domains students can navigate to (comma or newline separated).
+                                    </p>
+                                    <textarea
+                                        value={allowedDomains}
+                                        onChange={(e) => {
+                                            setAllowedDomains(e.target.value);
+                                            if (toast) clearToast();
+                                        }}
+                                        onBlur={() => {
+                                            if (!hasAllowedDomains()) {
+                                                showToast("At least one allowed domain is required when URL filtering is enabled.", "allowedDomains");
+                                            }
+                                        }}
+                                        rows={2}
+                                        placeholder="canvas.ufl.edu, *.instructure.com"
                                         className={cn(
-                                            "text-sm font-medium",
-                                            selectedPreset === preset.id
-                                                ? "text-primary"
-                                                : "text-foreground"
+                                            "w-full px-3 py-2 rounded-md border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none transition-shadow",
+                                            toastField === "allowedDomains" && "border-destructive focus:ring-destructive/30"
                                         )}
-                                    >
-                                        {preset.name}
-                                    </p>
-                                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                                        {preset.description}
-                                    </p>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Divider */}
-                    <div className="h-px bg-border" />
-
-                    {/* Settings Toggles */}
-                    <div>
-                        <label className="text-sm font-medium text-foreground">
-                            Security Settings
-                        </label>
-                        <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                            Fine-tune what students can and cannot do during the exam.
-                        </p>
-                        <div className="space-y-0.5">
-                            <ToggleRow
-                                icon={Monitor}
-                                label="Allow Screen Sharing"
-                                description="Let students share their screen with other apps"
-                                checked={overrides.allowScreenSharing}
-                                onChange={(v) => setOverride("allowScreenSharing", v)}
-                            />
-                            <ToggleRow
-                                icon={Monitor}
-                                label="Allow Virtual Machine"
-                                description="Allow SEB to run inside a VM (VMware, VirtualBox)"
-                                checked={overrides.allowVirtualMachine}
-                                onChange={(v) => setOverride("allowVirtualMachine", v)}
-                            />
-                            <ToggleRow
-                                icon={Keyboard}
-                                label="Allow Spell Check"
-                                description="Enable the browser's built-in spell checker"
-                                checked={overrides.allowSpellCheck}
-                                onChange={(v) => setOverride("allowSpellCheck", v)}
-                            />
-                            <ToggleRow
-                                icon={Globe}
-                                label="URL Filtering"
-                                description="Restrict navigation to allowed domains only"
-                                checked={overrides.urlFilterEnabled}
-                                onChange={(v) => setOverride("urlFilterEnabled", v)}
-                            />
-                            <ToggleRow
-                                icon={X}
-                                label="Allow Quit"
-                                description="Let students quit SEB with a password"
-                                checked={overrides.allowQuit}
-                                onChange={(v) => setOverride("allowQuit", v)}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Thin divider — only shown when sub-fields are visible */}
-                    {hasVisibleSubFields && <div className="h-px bg-border" />}
-
-                    {/* Allowed Domains — only shown when URL Filtering is enabled */}
-                    {overrides.urlFilterEnabled && (
-                        <div>
-                            <label className="text-sm font-medium text-foreground">
-                                Allowed Domains
-                            </label>
-                            <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                                Domains students can navigate to (comma or newline separated).
-                            </p>
-                            <textarea
-                                value={allowedDomains}
-                                onChange={(e) => {
-                                    setAllowedDomains(e.target.value);
-                                    if (toast) clearToast();
-                                }}
-                                onBlur={() => {
-                                    if (!hasAllowedDomains()) {
-                                        showToast("At least one allowed domain is required when URL filtering is enabled.", "allowedDomains");
-                                    }
-                                }}
-                                rows={2}
-                                placeholder="canvas.ufl.edu, *.instructure.com"
-                                className={cn(
-                                    "w-full px-3 py-2 rounded-md border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none transition-shadow",
-                                    toastField === "allowedDomains" && "border-destructive focus:ring-destructive/30"
-                                )}
-                            />
-                        </div>
-                    )}
-
-                    {/* Quit Password — only shown when Allow Quit is enabled */}
-                    {overrides.allowQuit && (
-                        <div>
-                            <label className="text-sm font-medium text-foreground">
-                                Quit Password
-                            </label>
-                            <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                                Students must enter this password to exit SEB during the exam.
-                            </p>
-                            <input
-                                type="text"
-                                value={quitPassword}
-                                onChange={(e) => {
-                                    setQuitPassword(e.target.value);
-                                    if (toast) clearToast();
-                                }}
-                                onBlur={() => {
-                                    if (!quitPassword.trim()) {
-                                        showToast("Quit password cannot be blank.", "quitPassword");
-                                    }
-                                }}
-                                placeholder="Enter a quit password"
-                                className={cn(
-                                    "w-full h-9 px-3 rounded-md border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow",
-                                    toastField === "quitPassword" && "border-destructive focus:ring-destructive/30"
-                                )}
-                            />
-                        </div>
-                    )}
-
-                    {/* Access Code */}
-                    <div className="h-px bg-border" />
-                    <div>
-                        <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-2">
-                            Access Code
-                        </p>
-
-                        <p className="text-xs text-muted-foreground mb-2">
-                            This code is set on Canvas and delivered automatically when SEB
-                            validates with our server. Students never see it directly.
-                        </p>
-
-                        <div className="flex items-center gap-2">
-                            {isEditingAccessCode ? (
-                                <input
-                                    ref={accessCodeInputRef}
-                                    type="text"
-                                    value={accessCode}
-                                    onChange={(e) => {
-                                        setConfigAccessCode(e.target.value);     // clear error as they type
-                                        if (toast) clearToast(); 
-                                    }}
-
-                                    onBlur={() => {
-                                        setIsEditingAccessCode(false);
-                                        if (accessCode.trim().length < 5) {
-                                            showToast("Access code must be at least 5 characters.", "accessCode");
-                                        }
-                                    }}
-                                    className={cn(
-                                        "flex-1 px-3 py-2 rounded-md border bg-background font-mono text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow",
-                                        toastField === "accessCode" && "border-destructive focus:ring-destructive/30"
-                                    )}
-                                />
-                            ) : (
-                                <code className={cn(
-                                    "flex-1 bg-secondary text-foreground px-3 py-2 rounded-md font-mono text-sm min-h-9",
-                                    toastField === "accessCode" && "ring-1 ring-destructive border border-destructive"
-                                )}>
-                                    {accessCode}
-                                </code>
+                                    />
+                                </div>
                             )}
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                className="shrink-0"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => {
-                                    if (!isEditingAccessCode) {
-                                        setIsEditingAccessCode(true);
-                                        setTimeout(() => {
-                                            accessCodeInputRef.current?.focus();
-                                            accessCodeInputRef.current?.select();
-                                        }, 0);
-                                    } else {
-                                        setIsEditingAccessCode(false);
-                                        if (accessCode.trim().length < 5) {
-                                            showToast("Access code must be at least 5 characters.", "accessCode");
-                                        }
-                                    }
-                                }}
-                                title={isEditingAccessCode ? "Done editing" : "Edit access code"}
-                            >
-                                <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                        </div>
-                    </div>
+
+                            {/* Quit Password — only shown when Allow Quit is enabled */}
+                            {overrides.allowQuit && (
+                                <div>
+                                    <label className="text-sm font-medium text-foreground">
+                                        Quit Password
+                                    </label>
+                                    <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                                        Students must enter this password to exit SEB during the exam.
+                                    </p>
+                                    <input
+                                        type="text"
+                                        value={quitPassword}
+                                        onChange={(e) => {
+                                            setQuitPassword(e.target.value);
+                                            if (toast) clearToast();
+                                        }}
+                                        onBlur={() => {
+                                            if (!quitPassword.trim()) {
+                                                showToast("Quit password cannot be blank.", "quitPassword");
+                                            }
+                                        }}
+                                        placeholder="Enter a quit password"
+                                        className={cn(
+                                            "w-full h-9 px-3 rounded-md border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow",
+                                            toastField === "quitPassword" && "border-destructive focus:ring-destructive/30"
+                                        )}
+                                    />
+                                </div>
+                            )}
+
+                            {/* Access Code */}
+                            <div className="h-px bg-border" />
+                            <div>
+                                <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-2">
+                                    Access Code
+                                </p>
+
+                                <p className="text-xs text-muted-foreground mb-2">
+                                    This code is set on Canvas and delivered automatically when SEB
+                                    validates with our server. Students never see it directly.
+                                </p>
+
+                                <div className="flex items-center gap-2">
+                                    {isEditingAccessCode ? (
+                                        <input
+                                            ref={accessCodeInputRef}
+                                            type="text"
+                                            value={accessCode}
+                                            onChange={(e) => {
+                                                setConfigAccessCode(e.target.value);     // clear error as they type
+                                                if (toast) clearToast(); 
+                                            }}
+
+                                            onBlur={() => {
+                                                setIsEditingAccessCode(false);
+                                                if (accessCode.trim().length < 5) {
+                                                    showToast("Access code must be at least 5 characters.", "accessCode");
+                                                }
+                                            }}
+                                            className={cn(
+                                                "flex-1 px-3 py-2 rounded-md border bg-background font-mono text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow",
+                                                toastField === "accessCode" && "border-destructive focus:ring-destructive/30"
+                                            )}
+                                        />
+                                    ) : (
+                                        <code className={cn(
+                                            "flex-1 bg-secondary text-foreground px-3 py-2 rounded-md font-mono text-sm min-h-9",
+                                            toastField === "accessCode" && "ring-1 ring-destructive border border-destructive"
+                                        )}>
+                                            {accessCode}
+                                        </code>
+                                    )}
+                                    <Button
+                                        variant="outline"
+                                        size="icon"
+                                        className="shrink-0"
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={() => {
+                                            if (!isEditingAccessCode) {
+                                                setIsEditingAccessCode(true);
+                                                setTimeout(() => {
+                                                    accessCodeInputRef.current?.focus();
+                                                    accessCodeInputRef.current?.select();
+                                                }, 0);
+                                            } else {
+                                                setIsEditingAccessCode(false);
+                                                if (accessCode.trim().length < 5) {
+                                                    showToast("Access code must be at least 5 characters.", "accessCode");
+                                                }
+                                            }
+                                        }}
+                                        title={isEditingAccessCode ? "Done editing" : "Edit access code"}
+                                    >
+                                        <Pencil className="w-3.5 h-3.5" />
+                                    </Button>
+                                </div>
+                            </div>
+                        </>
+                    )}
                 </div>
 
                 {/* Footer */}
                 <div className="flex items-center justify-end gap-2 px-5 py-3 border-t bg-muted/30">
-                    <Button variant="ghost" size="sm" onClick={onClose} disabled={saving} className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                    <Button variant="ghost" size="sm" onClick={onClose} disabled={saving || isLoadingSettings} className="text-destructive hover:text-destructive hover:bg-destructive/10">
                         Cancel
                     </Button>
                     <SEBChangesInfo
@@ -695,13 +712,13 @@ export function SEBConfigDialog({
                         accessCode={accessCode}
                         overrides={overrides}
                         allowedDomains={allowedDomains}
-                        disabled={saving}
+                        disabled={saving || isLoadingSettings}
                     />
                     <Button
                         variant="default"
                         size="sm"
                         onClick={handleSave}
-                        disabled={saving}
+                        disabled={saving || isLoadingSettings}
                         className="gap-1.5"
                     >
                         {saving ? (
