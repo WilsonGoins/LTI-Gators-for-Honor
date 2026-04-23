@@ -16,7 +16,7 @@ export function normalizeClassicQuiz(
     // core fields
     title: raw.title,
     description: raw.description ?? null,
-    dueAt: raw.due_at ?? null,
+    // dueAt removed — instructors care about access (unlock) date, not due date
     lockAt: raw.lock_at ?? null,
     unlockAt: raw.unlock_at ?? null,
     published: raw.published ?? false,
@@ -27,7 +27,7 @@ export function normalizeClassicQuiz(
 
     // security-related settings
     hasAccessCode: Boolean(raw.access_code),
-    accessCode: raw.access_code || null,       
+    accessCode: raw.access_code || null,
     allowedAttempts: raw.allowed_attempts ?? 1,
     shuffleQuestions: raw.shuffle_questions ?? false,
     shuffleAnswers: raw.shuffle_answers ?? false,
@@ -63,7 +63,7 @@ export function normalizeNewQuiz(
     // core fields
     title: raw.title,
     description: raw.instructions ?? null,
-    dueAt: raw.due_at ?? null,
+    // dueAt removed — instructors care about access (unlock) date, not due date
     lockAt: raw.lock_at ?? null,
     unlockAt: raw.unlock_at ?? null,
     published: raw.published ?? false,
@@ -75,7 +75,7 @@ export function normalizeNewQuiz(
 
     // security-related settings
     hasAccessCode: Boolean(s.student_access_code),
-    accessCode: s.student_access_code || null,  
+    accessCode: s.student_access_code || null,
     allowedAttempts: s.allowed_attempts ?? 1,
     shuffleQuestions: s.shuffle_questions ?? false,
     shuffleAnswers: s.shuffle_answers ?? false,

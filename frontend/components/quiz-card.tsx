@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Calendar,
+  CalendarClock,
   FileQuestion,
   Award,
   ShieldCheck,
@@ -23,7 +23,7 @@ interface QuizCardProps {
 }
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "No due date";
+  if (!iso) return "No access date";
   const d = new Date(iso);
   return d.toLocaleDateString("en-US", {
     month: "short",
@@ -34,19 +34,24 @@ function formatDate(iso: string | null): string {
   });
 }
 
-function getDueStatus(iso: string | null): "overdue" | "soon" | "upcoming" | "none" {
+// Access (unlock) date status — semantics differ from a due date:
+//   "open"     = unlock date is in the past, exam is currently accessible
+//   "soon"     = unlock date is within the next 3 days
+//   "upcoming" = unlock date is more than 3 days out
+//   "none"     = no unlock date set on the quiz
+function getAccessStatus(iso: string | null): "open" | "soon" | "upcoming" | "none" {
   if (!iso) return "none";
   const now = new Date();
-  const due = new Date(iso);
-  const diff = due.getTime() - now.getTime();
+  const unlock = new Date(iso);
+  const diff = unlock.getTime() - now.getTime();
   const days = diff / (1000 * 60 * 60 * 24);
-  if (diff < 0) return "overdue";
+  if (diff <= 0) return "open";
   if (days <= 3) return "soon";
   return "upcoming";
 }
 
 export function QuizCard({ quiz, onConfigure, onViewSettings }: QuizCardProps) {
-  const dueStatus = getDueStatus(quiz.dueAt);
+  const accessStatus = getAccessStatus(quiz.unlockAt);
 
   // Fully secured = SEB config generated AND settings in db
   const fullSecured = quiz.sebConfigured && !!quiz.sebSettings;
@@ -59,7 +64,7 @@ export function QuizCard({ quiz, onConfigure, onViewSettings }: QuizCardProps) {
               !quiz.published && "opacity-75"
           )}
       >
-        {/* Left border accent: green = fully secured, amber = partial, gray = nothing */}
+        {/* Left border accent: green = fully secured, gray = nothing */}
         <div
             className={cn(
                 "absolute left-0 top-3 bottom-3 w-[3px] rounded-full transition-colors",
@@ -77,14 +82,20 @@ export function QuizCard({ quiz, onConfigure, onViewSettings }: QuizCardProps) {
             {/* Meta row */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5" />
+              <CalendarClock className="w-3.5 h-3.5" />
               <span
                   className={cn(
-                      dueStatus === "overdue" && "text-destructive font-medium",
-                      dueStatus === "soon" && "text-amber-600 font-medium"
+                      // Emerald when the exam is currently open to students
+                      accessStatus === "open" && "text-emerald-600 font-medium",
+                      // Amber when the unlock date is within 3 days — heads-up to instructor
+                      accessStatus === "soon" && "text-amber-600 font-medium"
                   )}
               >
-                {formatDate(quiz.dueAt)}
+                {accessStatus === "none"
+                    ? "No access date"
+                    : accessStatus === "open"
+                        ? `Open since ${formatDate(quiz.unlockAt)}`
+                        : `Opens ${formatDate(quiz.unlockAt)}`}
               </span>
             </span>
 

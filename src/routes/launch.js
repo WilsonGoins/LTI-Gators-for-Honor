@@ -28,6 +28,37 @@ const CLIENT_SECRET = process.env.CANVAS_OAUTH_CLIENT_SECRET;
 const TOOL_URL = config.tool.url;
 
 
+// Fetch the quiz's current unlock_at from Canvas. Returns an ISO-8601 string
+// or null if no unlock date is set. Throws on Canvas API failure.
+//
+// We use the admin Canvas token here (same pattern as updateQuizForSEB in
+// routes/seb.js) rather than the student's refreshed OAuth token. This keeps
+// the check fast (no token refresh) and avoids exposing students' tokens to
+// extra API surface area.
+async function fetchQuizUnlockAt(courseId, quizId) {
+  const canvasToken = process.env.CANVAS_ACCESS_TOKEN;
+  if (!canvasToken) return null;  // Without admin token we can't enforce; fail open with warning logged elsewhere.
+
+  // Try the New Quizzes endpoint first; fall back to Classic on 404.
+  // The shape differs slightly but the unlock_at field is at the top level for both.
+  let res = await fetch(
+    `${CANVAS_URL}/api/quiz/v1/courses/${courseId}/quizzes/${quizId}`,
+    { headers: { Authorization: `Bearer ${canvasToken}` } }
+  );
+  if (res.status === 404) {
+    res = await fetch(
+      `${CANVAS_URL}/api/v1/courses/${courseId}/quizzes/${quizId}`,
+      { headers: { Authorization: `Bearer ${canvasToken}` } }
+    );
+  }
+  if (!res.ok) {
+    throw new Error(`Canvas quiz lookup failed (${res.status})`);
+  }
+  const data = await res.json();
+  return data.unlock_at || null;
+}
+
+
 // ---------------------------------------------------------------------------
 // GET /launch/file/:launchToken
 // Streams the .seb file for a specific launch session. Called by the
@@ -101,81 +132,115 @@ router.get('/launch/file/:launchToken', async (req, res) => {
 // the student what's happening next.
 // ---------------------------------------------------------------------------
 router.get('/launch/:courseId/:quizId/download', async (req, res) => {
-    const { courseId, quizId } = req.params;  
+    const { courseId, quizId } = req.params;
     const canvasUserId = req.cookies?.canvas_user;
-    
+
     if (!canvasUserId) {
-        return res.status(401).send('You must be authenticated. Please click the exam link again.');  
-  }  
+        return res.status(401).send('You must be authenticated. Please click the exam link again.');
+  }
 
   try {
-      // Verify the student has a refresh token  
+      // Verify the student has a refresh token
       const user = await getUserByCanvasId(canvasUserId);
       if (!user?.refresh_token) {
-          return res.redirect(`/launch/${courseId}/${quizId}`);  
-    }  
-    
+          return res.redirect(`/launch/${courseId}/${quizId}`);
+    }
+
     // Load the instructor's SEB configuration for this quiz
     const quizConfig = await getSEBConfigForStudent(courseId, quizId);
     if (!quizConfig) {
-        return res.status(404).send('This exam has not been configured for SEB yet. Contact your instructor.');  
-    }  
+        return res.status(404).send('This exam has not been configured for SEB yet. Contact your instructor.');
+    }
     if (!quizConfig.canvas_quiz_url) {
-        return res.status(500).send('Exam is misconfigured (missing quiz URL). Contact your instructor.');  
-    }  
-    
+        return res.status(500).send('Exam is misconfigured (missing quiz URL). Contact your instructor.');
+    }
+
+    // Enforce the access (unlock) date BEFORE issuing a launch token.
+    // Even though Canvas will block the actual quiz attempt before unlock_at,
+    // we want to refuse here so students can't download a .seb early and
+    // be confused by the failure later. Fail open (i.e. allow through) only
+    // if Canvas itself errors — Canvas's own enforcement remains the backstop.
+    try {
+      const unlockAt = await fetchQuizUnlockAt(courseId, quizId);
+      if (unlockAt && new Date(unlockAt) > new Date()) {
+        const opensAt = new Date(unlockAt).toLocaleString('en-US', {
+          dateStyle: 'long',
+          timeStyle: 'short',
+        });
+        return res.status(403).send(`
+          <html>
+          <head><title>Exam Not Yet Available</title>
+          <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96t.png">
+          </head>
+          <body style="font-family:system-ui,sans-serif;max-width:560px;margin:60px auto;padding:0 20px;color:#1a1a1a;">
+            <div style="border:1px solid #e5e5e5;border-radius:12px;padding:32px;background:#fafafa;">
+              <h2 style="margin-top:0;">This exam isn't open yet</h2>
+              <p>Your instructor has scheduled this exam to open on:</p>
+              <p style="font-size:18px;font-weight:600;color:#0021A5;">${opensAt}</p>
+              <p style="color:#666;">Please return at or after that time and click the launch link again.</p>
+            </div>
+          </body>
+          </html>
+        `);
+      }
+    } catch (lookupErr) {
+      // Canvas lookup failed — log and proceed. Canvas will still block the
+      // attempt server-side if unlock_at hasn't passed.
+      console.warn(`unlock_at check failed for course ${courseId} quiz ${quizId}:`, lookupErr.message);
+    }
+
     // Generate launch token + register session now, so the download endpoint
     // just has to look it up and stream the file
     const launchToken = crypto.randomBytes(32).toString('hex');
-    
+
     await createLaunchSession({
-      launchToken,  
+      launchToken,
       canvasUserId: Number(canvasUserId),
       courseId,
       quizId,
       canvasQuizURL: quizConfig.canvas_quiz_url,
       accessCode: quizConfig.access_code || null,
-    });  
-    
+    });
+
     // Build and compute the Config Key NOW so we can store it on the session.
     // The /file endpoint will rebuild the same .seb deterministically.
     const presetName = quizConfig.preset_name || 'standard';
     const allowedDomains = Array.isArray(quizConfig.allowed_url_patterns)
     ? quizConfig.allowed_url_patterns
     : (quizConfig.allowed_url_patterns || []);
-    
+
     const overrides = {
       browserViewMode: quizConfig.force_fullscreen ? 1 : 0,
       allowScreenSharing: !(quizConfig.block_screen_sharing ?? true),
       allowVirtualMachine: !(quizConfig.block_virtual_machine ?? true),
       allowSpellCheck: !(quizConfig.disable_spell_check ?? true),
       URLFilterEnable: quizConfig.enable_url_filter ?? true,
-    };  
-    
+    };
+
     const sebConfig = seb.generateConfig({
-        courseId,  
+        courseId,
         quizId,
         launchToken,
         preset: presetName,
         allowedDomains,
         overrides,
-    });  
+    });
     const configKey = seb.computeConfigKey(sebConfig);
     await updateLaunchSessionConfigKey(launchToken, configKey);
-    
+
     // Render the landing page — it auto-downloads the file
     return res.send(renderLandingPage({ launchToken, courseId, quizId }));
-    
+
 } catch (err) {
-    console.error('Download route error:', err);  
+    console.error('Download route error:', err);
     return res.status(500).send(
-        `<html><body style="font-family:system-ui,sans-serif;max-width:600px;margin:40px auto;">  
+        `<html><body style="font-family:system-ui,sans-serif;max-width:600px;margin:40px auto;">
         <h2>Failed to prepare exam file</h2>
         <p><strong>Error:</strong> ${err.message}</p>
-        </body></html>`  
-    );  
-}  
-});  
+        </body></html>`
+    );
+}
+});
 
 
 // ---------------------------------------------------------------------------
@@ -215,7 +280,7 @@ router.get('/launch/:courseId/:quizId', async (req, res) => {
   authURL.searchParams.set('state', state);
 
   return res.redirect(authURL.toString());
-});  
+});
 
 
 // ---------------------------------------------------------------------------
@@ -386,7 +451,7 @@ function renderLandingPage({ launchToken, courseId, quizId }) {
         <strong>Next steps:</strong>
         <ol>
             <li>Wait for the <code>.seb</code> file to finish downloading.</li>
-            <li>Open the downloaded file, then Safe Exam Browser will launch automatically.</li>
+            <li>Open the downloaded file — Safe Exam Browser will launch automatically.</li>
             <li>Complete your exam inside Safe Exam Browser.</li>
         </ol>
         </div>

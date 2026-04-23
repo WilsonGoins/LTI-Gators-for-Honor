@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { X, ShieldCheck, Monitor, Globe, Wifi, Pencil } from "lucide-react";
+import { X, ShieldCheck, Monitor, Globe, Wifi, Pencil, CalendarClock } from "lucide-react";
 import { Quiz } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,19 @@ const SECURITY_LABELS: Record<string, { label: string; color: string }> = {
   openBook: { label: "Open Book", color: "text-emerald-600 bg-emerald-50 border-emerald-200" },
   testingCenter: { label: "Testing Center", color: "text-violet-600 bg-violet-50 border-violet-200" },
 };
+
+function formatAccessDate(iso: string | null): string {
+  if (!iso) return "Not set";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "Not set";
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 function SettingRow({
                       icon: Icon,
@@ -123,6 +136,22 @@ export function SEBSettingsDialog({ quiz, open, courseId, onClose, onEdit }: SEB
                 >
                 {security.label}
               </span>
+              </div>
+            </div>
+
+            {/* Access date */}
+            <div className="flex items-center gap-3">
+              <CalendarClock className="w-5 h-5 text-primary" />
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
+                  Access Date
+                </p>
+                <p className="text-sm font-medium text-foreground mt-1">
+                  {formatAccessDate(quiz.unlockAt)}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Earliest time students can start the exam.
+                </p>
               </div>
             </div>
 

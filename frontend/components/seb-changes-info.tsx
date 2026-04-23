@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { HelpCircle, X, KeyRound, BookText, Type } from "lucide-react";
+import { HelpCircle, X, KeyRound, BookText, Type, CalendarClock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ConfigOverrides {
@@ -16,6 +16,8 @@ interface SEBChangesInfoProps {
     accessCode: string;
     overrides: ConfigOverrides;
     allowedDomains: string;
+    /** ISO-8601 UTC string, or null if instructor hasn't picked one yet */
+    accessDate: string | null;
     disabled?: boolean;
 }
 
@@ -25,9 +27,20 @@ interface ChangeItem {
     detail: string;
 }
 
+function formatAccessDate(iso: string): string {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "the selected date";
+    return d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+    });
+}
+
 export function SEBChangesInfo({
-    quizTitle,
-    accessCode,
+    accessDate,
     disabled,
 }: SEBChangesInfoProps) {
     const [open, setOpen] = useState(false);
@@ -63,25 +76,30 @@ export function SEBChangesInfo({
     }, [open]);
 
     // Build the list of changes based on current config state
-    const changes: ChangeItem[] = [];
-
-    changes.push(
-    {
-        icon: Type,
-        label: "Quiz title updated",
-        detail: `The title will have "(Requires SEB)" appended to it.`,
-    },
-    {
-        icon: BookText,
-        label: "Quiz instructions updated",
-        detail: `The assignment instructions will indicate how to launch the quiz with SEB.`,
-    },
-    {
-        icon: KeyRound,
-        label: "Access code enforced behind SEB",
-        detail: `An access code is required on the quiz, but it's never shown to students.`,
-    }
-);
+    const changes: ChangeItem[] = [
+        {
+            icon: Type,
+            label: "Quiz title updated",
+            detail: `The title will have "(Requires SEB)" appended to it.`,
+        },
+        {
+            icon: BookText,
+            label: "Quiz instructions updated",
+            detail: `The assignment instructions will indicate how to launch the quiz with SEB.`,
+        },
+        {
+            icon: CalendarClock,
+            label: "Access date set on the quiz",
+            detail: accessDate
+                ? `Students will not be able to start the exam before ${formatAccessDate(accessDate)}.`
+                : `Students will not be able to start the exam before the date you select.`,
+        },
+        {
+            icon: KeyRound,
+            label: "Access code enforced behind SEB",
+            detail: `An access code is required on the quiz, but it's never shown to students.`,
+        },
+    ];
 
 
     return (

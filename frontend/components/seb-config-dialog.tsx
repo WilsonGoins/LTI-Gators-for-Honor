@@ -11,12 +11,14 @@ import {
     Loader2,
     AlertTriangle,
     Pencil,
+    CalendarClock,
 } from "lucide-react";
 import { Quiz } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { BACKEND_URL, setAccessCode } from "@/lib/api";
+import { BACKEND_URL, setAccessCode, setUnlockDate } from "@/lib/api";
 import { SEBChangesInfo } from "@/components/seb-changes-info";
+import { AccessDateTimePicker } from "@/components/access-date-time-picker";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,7 +28,7 @@ interface SEBConfigDialogProps {
     courseId: string;
     canvasUrl: string;
     onClose: () => void;
-    onSaved: (quizId: string, accessCodeSet: boolean, settings: import("@/lib/types").SEBSettings) => void;
+    onSaved: (quizId: string, accessCodeSet: boolean, settings: import("@/lib/types").SEBSettings, unlockAt: string) => void;
 }
 
 interface Preset {
@@ -44,7 +46,7 @@ interface ConfigOverrides {
 }
 
 // Which field triggered the current toast error
-type ToastField = "accessCode" | "allowedDomains" | null;
+type ToastField = "accessCode" | "allowedDomains" | "accessDate" | null;
 
 
 // What each preset defaults to (so toggles reset when you switch presets)
@@ -152,6 +154,7 @@ export function SEBConfigDialog({
     );
     const [allowedDomains, setAllowedDomains] = useState("");
     const [accessCode, setConfigAccessCode] = useState("");
+    const [accessDate, setAccessDate] = useState<string | null>(null);  // ISO-8601 UTC
     const [isEditingAccessCode, setIsEditingAccessCode] = useState(false);
     const accessCodeInputRef = useRef<HTMLInputElement>(null);
 
@@ -235,6 +238,10 @@ export function SEBConfigDialog({
             setError(null);
             setToast(null);
             setSaving(false);
+
+            // Access date is sourced from Canvas (via the quiz object's unlockAt
+            // which the dashboard already populates). It is NOT stored in our DB.
+            setAccessDate(quiz.unlockAt || null);
 
             // If quiz has SEB configured, fetch saved settings from DB
             if (quiz.sebConfigured || quiz.sebSettings) {
@@ -321,6 +328,21 @@ export function SEBConfigDialog({
             return;
         }
 
+        // Validate access date — required, since it's the primary mechanism
+        // preventing students from taking the exam early
+        if (!accessDate) {
+            showToast("Access date is required.", "accessDate");
+            return;
+        }
+
+        // Defense in depth — the picker already blocks past dates, but in case
+        // the user's clock changed between picker selection and save, refuse
+        // anything in the past at the save handler too.
+        if (new Date(accessDate).getTime() <= Date.now()) {
+            showToast("Access date must be in the future.", "accessDate");
+            return;
+        }
+
         setSaving(true);
         setError(null);
 
@@ -337,8 +359,10 @@ export function SEBConfigDialog({
             const result = await setAccessCode(courseId, quiz.id, quiz.quizType, token, accessCode);
             const accessCodeValue = result.accessCode;
 
+            // Step 2: Set the access (unlock) date on Canvas
+            await setUnlockDate(courseId, quiz.id, quiz.quizType, token, accessDate);
 
-            // Step 2: Generate and save the SEB config on the backend
+            // Step 3: Generate and save the SEB config on the backend
             //   (backend also updates the Canvas quiz's title + instructions
             //    with the per-student launch link)
             const canvasQuizURL = `${canvasUrl}/courses/${courseId}/quizzes/${quiz.id}/take`;
@@ -388,7 +412,7 @@ export function SEBConfigDialog({
                 configuredAt: new Date().toISOString(),
             };
 
-            onSaved(quiz.id, true, savedSettings);
+            onSaved(quiz.id, true, savedSettings, accessDate);
             onClose();
         } catch (err) {
             console.error("SEB config save error:", err);
@@ -396,7 +420,7 @@ export function SEBConfigDialog({
         } finally {
             setSaving(false);
         }
-    }, [quiz, courseId, canvasUrl, selectedPreset, overrides, allowedDomains, accessCode, hasAllowedDomains, onSaved, onClose, showToast]);
+    }, [quiz, courseId, canvasUrl, selectedPreset, overrides, allowedDomains, accessCode, accessDate, hasAllowedDomains, onSaved, onClose, showToast]);
 
     // ── Render ───────────────────────────────────────────────────────────────
     if (!open || !quiz) return null;
@@ -576,6 +600,31 @@ export function SEBConfigDialog({
                                 </div>
                             )}
 
+                            {/* Access Date */}
+                            <div className="h-px bg-border" />
+                            <div>
+                                <div className="flex items-center gap-1.5 mb-2">
+                                    <CalendarClock className="w-3.5 h-3.5 text-muted-foreground" />
+                                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
+                                        Access Date
+                                    </p>
+                                </div>
+
+                                <AccessDateTimePicker
+                                    value={accessDate}
+                                    onChange={(v) => {
+                                        setAccessDate(v);
+                                        if (toast) clearToast();
+                                    }}
+                                    error={toastField === "accessDate"}
+                                    disabled={saving}
+                                />
+
+                                <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+                                    The earliest date and time students can start the exam.
+                                </p>
+                            </div>
+
                             {/* Access Code */}
                             <div className="h-px bg-border" />
                             <div>
@@ -657,6 +706,7 @@ export function SEBConfigDialog({
                         accessCode={accessCode}
                         overrides={overrides}
                         allowedDomains={allowedDomains}
+                        accessDate={accessDate}
                         disabled={saving || isLoadingSettings}
                     />
                     <Button
