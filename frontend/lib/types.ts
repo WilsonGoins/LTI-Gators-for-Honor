@@ -29,6 +29,7 @@ export interface Quiz {
   // now surfaces unlockAt (Canvas "Available from") as the primary date.
   lockAt: string | null;
   unlockAt: string | null;
+  dueAt: string | null;     // only used for SEB settings dialog, which shows both unlock and due dates
   published: boolean;
   pointsPossible: number | null;
   questionCount: number;

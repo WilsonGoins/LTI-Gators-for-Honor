@@ -16,7 +16,7 @@ export function normalizeClassicQuiz(
     // core fields
     title: raw.title,
     description: raw.description ?? null,
-    // dueAt removed — instructors care about access (unlock) date, not due date
+    dueAt: raw.due_at ?? null,  // we keep this for SEB settings dialog, which shows both unlock and due dates
     lockAt: raw.lock_at ?? null,
     unlockAt: raw.unlock_at ?? null,
     published: raw.published ?? false,
@@ -63,9 +63,9 @@ export function normalizeNewQuiz(
     // core fields
     title: raw.title,
     description: raw.instructions ?? null,
-    // dueAt removed — instructors care about access (unlock) date, not due date
     lockAt: raw.lock_at ?? null,
     unlockAt: raw.unlock_at ?? null,
+    dueAt: raw.due_at ?? null,
     published: raw.published ?? false,
     pointsPossible: raw.points_possible ?? null,
     questionCount: s.question_count ?? 0,
