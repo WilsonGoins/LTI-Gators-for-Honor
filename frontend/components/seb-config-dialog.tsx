@@ -243,8 +243,37 @@ export function SEBConfigDialog({
             // which the dashboard already populates). It is NOT stored in our DB.
             setAccessDate(quiz.unlockAt || null);
 
-            // If quiz has SEB configured, fetch saved settings from DB
-            if (quiz.sebConfigured || quiz.sebSettings) {
+            // Fast path: if the parent already has the saved SEB settings on
+            // the quiz object (which it does whenever this dialog is opened
+            // from the dashboard or the settings dialog), use them directly.
+            // No network round-trip, no spinner flash. The DB is only the
+            // source of truth between edits, and after each save the parent
+            // updates its local state — so a refetch here would never return
+            // anything different from what's already in props.
+            if (quiz.sebSettings) {
+                const s = quiz.sebSettings;
+                setSelectedPreset(s.securityLevel || "standard");
+                setOverrides({
+                    allowScreenSharing: s.allowScreenSharing ?? false,
+                    allowVirtualMachine: s.allowVirtualMachine ?? false,
+                    allowSpellCheck: s.allowSpellCheck ?? false,
+                    urlFilterEnabled: s.urlFilterEnabled ?? true,
+                });
+                setAllowedDomains(
+                    Array.isArray(s.allowedDomains) && s.allowedDomains.length > 0
+                        ? s.allowedDomains.join(", ")
+                        : canvasUrl ? new URL(canvasUrl).hostname : ""
+                );
+                setConfigAccessCode(s.accessCode || quiz.accessCode || generateRandomCode());
+                setLoadedQuizId(quiz.id);
+                return;
+            }
+
+            // Fallback: the quiz claims to be configured but somehow doesn't
+            // have settings on the prop (shouldn't happen in normal use, but
+            // possible if the dashboard's status fetch raced ahead of its
+            // settings fetch). Pull from the DB as a safety net.
+            if (quiz.sebConfigured) {
                 try {
                     const token = sessionStorage.getItem("seb_token");
                     const res = await fetch(
