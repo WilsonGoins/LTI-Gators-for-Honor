@@ -205,32 +205,15 @@ router.post('/access-code', express.json(), async (req, res) => {
 
 // ---------------------------------------------------------------------------
 // POST /seb/unlock-date
-// Sets the unlock_at (access date) on a Canvas quiz. This is the primary
-// mechanism preventing students from starting an exam before its scheduled
-// time — the SEB access code alone cannot block them since it's hidden.
-//
-// Body:
-//   {
-//     courseId: "1",
-//     quizId: "5",
-//     quizType: "classic" | "new",
-//     unlockAt: "2026-04-22T19:00:00.000Z"   // ISO-8601, UTC
-//   }
+// Sets the unlock_at (access) date on a Canvas quiz.
 // ---------------------------------------------------------------------------
 
 router.post('/unlock-date', express.json(), async (req, res) => {
   try {
     const { courseId, quizId, quizType, unlockAt } = req.body;
 
-    if (!courseId || !quizId) {
-      return res.status(400).json({ error: 'courseId and quizId are required' });
-    }
-    if (!unlockAt) {
-      return res.status(400).json({ error: 'unlockAt is required' });
-    }
-    // Sanity-check the date — fail loud rather than silently writing garbage
-    if (isNaN(new Date(unlockAt).getTime())) {
-      return res.status(400).json({ error: 'unlockAt must be a valid ISO-8601 date string' });
+    if (!courseId || !quizId || !unlockAt) {
+      return res.status(400).json({ error: 'courseId, quizId, and unlockAt are required' });
     }
 
     const canvasToken = process.env.CANVAS_ACCESS_TOKEN;
@@ -245,7 +228,7 @@ router.post('/unlock-date', express.json(), async (req, res) => {
         {
           method: 'PATCH',
           headers: { Authorization: `Bearer ${canvasToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ unlock_at: unlockAt }),
+          body: JSON.stringify({ quiz: { unlock_at: unlockAt } }),
         }
       );
     } else {
@@ -265,10 +248,66 @@ router.post('/unlock-date', express.json(), async (req, res) => {
       return res.status(502).json({ error: 'Failed to set access date on Canvas', detail: `Canvas returned ${canvasRes.status}` });
     }
 
-    console.log(`✅ Access date set for course ${courseId}, quiz ${quizId}: ${unlockAt}`);
+    console.log(`✅ Access date set for course ${courseId}, quiz ${quizId}`);
     res.json({ unlockAt });
   } catch (err) {
     console.error('Unlock date error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /seb/due-date
+// Sets the due_at date on a Canvas quiz. Accepts null in dueAt to clear.
+// ---------------------------------------------------------------------------
+
+router.post('/due-date', express.json(), async (req, res) => {
+  try {
+    const { courseId, quizId, quizType, dueAt } = req.body;
+
+    if (!courseId || !quizId) {
+      return res.status(400).json({ error: 'courseId and quizId are required' });
+    }
+
+    const canvasToken = process.env.CANVAS_ACCESS_TOKEN;
+    if (!canvasToken) {
+      return res.status(500).json({ error: 'Canvas access token not configured' });
+    }
+
+    // dueAt may be null — Canvas accepts null to clear the due date.
+    const dueAtValue = dueAt ?? null;
+
+    let canvasRes;
+    if (quizType === 'new') {
+      canvasRes = await fetch(
+        `${CANVAS_URL}/api/quiz/v1/courses/${courseId}/quizzes/${quizId}`,
+        {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${canvasToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ quiz: { due_at: dueAtValue } }),
+        }
+      );
+    } else {
+      canvasRes = await fetch(
+        `${CANVAS_URL}/api/v1/courses/${courseId}/quizzes/${quizId}`,
+        {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${canvasToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ quiz: { due_at: dueAtValue } }),
+        }
+      );
+    }
+
+    if (!canvasRes.ok) {
+      const errBody = await canvasRes.text();
+      console.error('Canvas due_at error:', canvasRes.status, errBody);
+      return res.status(502).json({ error: 'Failed to set due date on Canvas', detail: `Canvas returned ${canvasRes.status}` });
+    }
+
+    console.log(`✅ Due date set for course ${courseId}, quiz ${quizId}`);
+    res.json({ dueAt: dueAtValue });
+  } catch (err) {
+    console.error('Due date error:', err);
     res.status(500).json({ error: err.message });
   }
 });

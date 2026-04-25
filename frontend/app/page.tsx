@@ -73,14 +73,13 @@ export default function DashboardPage() {
     setConfigOpen(true);
   }, []);
 
-  // Called after the config dialog saves successfully.
-  // The dialog now also reports the access (unlock) date it set on the Canvas
-  // quiz, so we can update local state without waiting for the next refetch.
+  // Called after the config dialog saves successfully
   const handleConfigSaved = useCallback((
       quizId: string,
       accessCodeSet: boolean,
       settings: import("@/lib/types").SEBSettings,
       unlockAt: string,
+      dueAt: string | null,
   ) => {
     setQuizzes((prev) =>
         prev.map((q) =>
@@ -88,10 +87,11 @@ export default function DashboardPage() {
                 ? {
                   ...q,
                   hasAccessCode: accessCodeSet ? true : q.hasAccessCode,
+                  unlockAt,
+                  dueAt,
                   sebConfigured: true,
                   sebConfiguredDate: new Date().toISOString(),
                   sebSettings: settings,
-                  unlockAt,
                   title: q.title.includes('Requires SEB') ? q.title : `${q.title} (Requires SEB)`,
                 }
                 : q
@@ -175,7 +175,7 @@ export default function DashboardPage() {
               <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground mr-1" />
               {(
                   [
-                    ["unlockAt", "Access Date"],
+                    ["dueAt", "Due Date"],
                     ["title", "Name"],
                     ["sebConfigured", "SEB Status"],
                   ] as [SortKey, string][]

@@ -11,12 +11,13 @@ import {
     Loader2,
     AlertTriangle,
     Pencil,
+    Calendar,
     CalendarClock,
 } from "lucide-react";
 import { Quiz } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { BACKEND_URL, setAccessCode, setUnlockDate } from "@/lib/api";
+import { BACKEND_URL, setAccessCode, setUnlockDate, setDueDate as apiSetDueDate } from "@/lib/api";
 import { SEBChangesInfo } from "@/components/seb-changes-info";
 import { AccessDateTimePicker } from "@/components/access-date-time-picker";
 
@@ -28,7 +29,7 @@ interface SEBConfigDialogProps {
     courseId: string;
     canvasUrl: string;
     onClose: () => void;
-    onSaved: (quizId: string, accessCodeSet: boolean, settings: import("@/lib/types").SEBSettings, unlockAt: string) => void;
+    onSaved: (quizId: string, accessCodeSet: boolean, settings: import("@/lib/types").SEBSettings, unlockAt: string, dueAt: string | null) => void;
 }
 
 interface Preset {
@@ -46,7 +47,7 @@ interface ConfigOverrides {
 }
 
 // Which field triggered the current toast error
-type ToastField = "accessCode" | "allowedDomains" | "accessDate" | null;
+type ToastField = "accessCode" | "allowedDomains" | "accessDate" | "dueDate" | null;
 
 
 // What each preset defaults to (so toggles reset when you switch presets)
@@ -155,6 +156,13 @@ export function SEBConfigDialog({
     const [allowedDomains, setAllowedDomains] = useState("");
     const [accessCode, setConfigAccessCode] = useState("");
     const [accessDate, setAccessDate] = useState<string | null>(null);  // ISO-8601 UTC
+    const [dueDate, setDueDate] = useState<string | null>(null);        // ISO-8601 UTC, optional
+
+    // Tracks whether the time field inside each picker has invalid input
+    // (e.g. "4:88 pm"). The picker shows a red border; these flags let the
+    // save handler block and show a toast.
+    const [accessTimeError, setAccessTimeError] = useState(false);
+    const [dueTimeError, setDueTimeError] = useState(false);
     const [isEditingAccessCode, setIsEditingAccessCode] = useState(false);
     const accessCodeInputRef = useRef<HTMLInputElement>(null);
 
@@ -242,6 +250,10 @@ export function SEBConfigDialog({
             // Access date is sourced from Canvas (via the quiz object's unlockAt
             // which the dashboard already populates). It is NOT stored in our DB.
             setAccessDate(quiz.unlockAt || null);
+
+            // Due date is also sourced from Canvas; optional — users can leave it
+            // unset. Not stored in our DB; we write through to Canvas on save.
+            setDueDate(quiz.dueAt || null);
 
             // Fast path: if the parent already has the saved SEB settings on
             // the quiz object (which it does whenever this dialog is opened
@@ -357,6 +369,16 @@ export function SEBConfigDialog({
             return;
         }
 
+        // Block save if either time field has invalid input (e.g. "4:88 pm")
+        if (accessTimeError) {
+            showToast("Enter a valid time for the access date.", "accessDate");
+            return;
+        }
+        if (dueTimeError) {
+            showToast("Enter a valid time for the due date.", "dueDate");
+            return;
+        }
+
         // Validate access date — required, since it's the primary mechanism
         // preventing students from taking the exam early
         if (!accessDate) {
@@ -370,6 +392,20 @@ export function SEBConfigDialog({
         if (new Date(accessDate).getTime() <= Date.now()) {
             showToast("Access date must be in the future.", "accessDate");
             return;
+        }
+
+        // Validate due date — optional, so only check if set. Must be in the
+        // future (same rationale as access date) and must be on or after the
+        // access date (an exam that closes before it opens is nonsensical).
+        if (dueDate) {
+            if (new Date(dueDate).getTime() <= Date.now()) {
+                showToast("Due date must be in the future.", "dueDate");
+                return;
+            }
+            if (new Date(dueDate).getTime() < new Date(accessDate).getTime()) {
+                showToast("Due date must be on or after the access date.", "dueDate");
+                return;
+            }
         }
 
         setSaving(true);
@@ -390,6 +426,13 @@ export function SEBConfigDialog({
 
             // Step 2: Set the access (unlock) date on Canvas
             await setUnlockDate(courseId, quiz.id, quiz.quizType, token, accessDate);
+
+            // Step 2b: Set (or clear) the due date on Canvas. Only fire if the
+            // value changed — avoids an unnecessary round-trip when due date
+            // wasn't touched.
+            if ((dueDate || null) !== (quiz.dueAt || null)) {
+                await apiSetDueDate(courseId, quiz.id, quiz.quizType, token, dueDate);
+            }
 
             // Step 3: Generate and save the SEB config on the backend
             //   (backend also updates the Canvas quiz's title + instructions
@@ -441,7 +484,7 @@ export function SEBConfigDialog({
                 configuredAt: new Date().toISOString(),
             };
 
-            onSaved(quiz.id, true, savedSettings, accessDate);
+            onSaved(quiz.id, true, savedSettings, accessDate, dueDate);
             onClose();
         } catch (err) {
             console.error("SEB config save error:", err);
@@ -449,7 +492,7 @@ export function SEBConfigDialog({
         } finally {
             setSaving(false);
         }
-    }, [quiz, courseId, canvasUrl, selectedPreset, overrides, allowedDomains, accessCode, accessDate, hasAllowedDomains, onSaved, onClose, showToast]);
+    }, [quiz, courseId, canvasUrl, selectedPreset, overrides, allowedDomains, accessCode, accessDate, dueDate, accessTimeError, dueTimeError, hasAllowedDomains, onSaved, onClose, showToast]);
 
     // ── Render ───────────────────────────────────────────────────────────────
     if (!open || !quiz) return null;
@@ -645,12 +688,39 @@ export function SEBConfigDialog({
                                         setAccessDate(v);
                                         if (toast) clearToast();
                                     }}
+                                    onTimeError={setAccessTimeError}
                                     error={toastField === "accessDate"}
                                     disabled={saving}
                                 />
 
                                 <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
                                     The earliest date and time students can start the exam.
+                                </p>
+                            </div>
+
+                            {/* Due Date */}
+                            <div className="h-px bg-border" />
+                            <div>
+                                <div className="flex items-center gap-1.5 mb-2">
+                                    <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+                                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
+                                        Due Date <span className="normal-case text-muted-foreground/70">(optional)</span>
+                                    </p>
+                                </div>
+
+                                <AccessDateTimePicker
+                                    value={dueDate}
+                                    onChange={(v) => {
+                                        setDueDate(v);
+                                        if (toast) clearToast();
+                                    }}
+                                    onTimeError={setDueTimeError}
+                                    error={toastField === "dueDate"}
+                                    disabled={saving}
+                                />
+
+                                <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+                                    When the exam closes. Must be on or after the access date.
                                 </p>
                             </div>
 
@@ -736,6 +806,7 @@ export function SEBConfigDialog({
                         overrides={overrides}
                         allowedDomains={allowedDomains}
                         accessDate={accessDate}
+                        dueDate={dueDate}
                         disabled={saving || isLoadingSettings}
                     />
                     <Button

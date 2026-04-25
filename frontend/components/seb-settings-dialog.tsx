@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { X, ShieldCheck, Monitor, Globe, Wifi, Pencil, CalendarClock } from "lucide-react";
+import { X, ShieldCheck, Monitor, Globe, Wifi, Pencil, Calendar, CalendarClock } from "lucide-react";
 import { Quiz } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -154,6 +154,24 @@ export function SEBSettingsDialog({ quiz, open, courseId, onClose, onEdit }: SEB
                 </p>
               </div>
             </div>
+
+            {/* Due date — only shown when set on the quiz */}
+            {quiz.dueAt && (
+                <div className="flex items-center gap-3">
+                  <Calendar className="w-5 h-5 text-primary" />
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
+                      Due Date
+                    </p>
+                    <p className="text-sm font-medium text-foreground mt-1">
+                      {formatAccessDate(quiz.dueAt)}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      When the exam closes.
+                    </p>
+                  </div>
+                </div>
+            )}
 
             {/* Settings grid */}
             <div className="space-y-0 divide-y divide-border">

@@ -9,6 +9,8 @@ interface AccessDateTimePickerProps {
     value: string | null;
     /** Called with a new ISO-8601 UTC string, or null when cleared */
     onChange: (value: string | null) => void;
+    /** Called when the time field's validation state changes. True = invalid input. */
+    onTimeError?: (hasError: boolean) => void;
     error?: boolean;
     disabled?: boolean;
 }
@@ -395,6 +397,7 @@ function TimePopover({
 export function AccessDateTimePicker({
     value,
     onChange,
+    onTimeError,
     error,
     disabled,
 }: AccessDateTimePickerProps) {
@@ -416,6 +419,12 @@ export function AccessDateTimePicker({
     // `value` only on Enter, blur, or selecting from the dropdown.
     const [timeDraft, setTimeDraft] = useState<string>(time ? formatTimeDisplay(time) : "");
     const [timeInvalid, setTimeInvalid] = useState(false);
+
+    // Notify the parent whenever the time field's validity changes so the
+    // save handler can block on invalid input (e.g. "4:88 pm").
+    useEffect(() => {
+        onTimeError?.(timeInvalid);
+    }, [timeInvalid, onTimeError]);
 
     // Keep the draft in sync when the parent value changes from outside
     // (e.g. on dialog open, on date change that bumps the time forward)

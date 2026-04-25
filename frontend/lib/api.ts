@@ -88,8 +88,7 @@ export async function setAccessCode(
 }
 
 
-// sets the unlock_at (access date) on a Canvas quiz.
-// `unlockAt` must be an ISO-8601 string in UTC (e.g. "2026-04-22T19:00:00Z").
+// sets the unlock_at (access) date on a Canvas quiz
 export async function setUnlockDate(
   courseId: string,
   quizId: string,
@@ -107,7 +106,31 @@ export async function setUnlockDate(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.detail || err.error || `Failed to set access date (${res.status})`);
+    throw new Error(err.detail || err.error || `Failed to set unlock date (${res.status})`);
+  }
+  return res.json();
+}
+
+
+// sets the due_at date on a Canvas quiz. Pass null to clear it.
+export async function setDueDate(
+  courseId: string,
+  quizId: string,
+  quizType: "classic" | "new",
+  token: string,
+  dueAt: string | null
+): Promise<{ dueAt: string | null }> {
+  const res = await fetch(`${BACKEND_URL}/seb/due-date`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ courseId, quizId, quizType, dueAt }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.detail || err.error || `Failed to set due date (${res.status})`);
   }
   return res.json();
 }

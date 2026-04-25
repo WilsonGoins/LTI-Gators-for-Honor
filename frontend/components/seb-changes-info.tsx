@@ -18,6 +18,8 @@ interface SEBChangesInfoProps {
     allowedDomains: string;
     /** ISO-8601 UTC string, or null if instructor hasn't picked one yet */
     accessDate: string | null;
+    /** ISO-8601 UTC string, or null if instructor left due date unset (optional) */
+    dueDate: string | null;
     disabled?: boolean;
 }
 
@@ -41,6 +43,7 @@ function formatAccessDate(iso: string): string {
 
 export function SEBChangesInfo({
     accessDate,
+    dueDate,
     disabled,
 }: SEBChangesInfoProps) {
     const [open, setOpen] = useState(false);
@@ -75,6 +78,17 @@ export function SEBChangesInfo({
         return () => document.removeEventListener("keydown", handleKey);
     }, [open]);
 
+    // Build the combined detail copy for the access + due date row. Three
+    // shapes: both set, only access set, neither set (user still editing).
+    let dateDetail: string;
+    if (accessDate && dueDate) {
+        dateDetail = `Students can start the exam on ${formatAccessDate(accessDate)}. It closes on ${formatAccessDate(dueDate)}.`;
+    } else if (accessDate) {
+        dateDetail = `Students will not be able to start the exam before ${formatAccessDate(accessDate)}.`;
+    } else {
+        dateDetail = `Students will not be able to start the exam before the date you select.`;
+    }
+
     // Build the list of changes based on current config state
     const changes: ChangeItem[] = [
         {
@@ -89,10 +103,8 @@ export function SEBChangesInfo({
         },
         {
             icon: CalendarClock,
-            label: "Access date set on the quiz",
-            detail: accessDate
-                ? `Students will not be able to start the exam before ${formatAccessDate(accessDate)}.`
-                : `Students will not be able to start the exam before the date you select.`,
+            label: dueDate ? "Access and due date set" : "Access date set on the quiz",
+            detail: dateDetail,
         },
         {
             icon: KeyRound,
