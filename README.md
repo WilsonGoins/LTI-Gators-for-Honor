@@ -14,10 +14,24 @@ Instructors at UF who want to use Safe Exam Browser (SEB) for proctored exams in
 
 The Canvas SEB Quiz Creator is an LTI 1.3 application that provides a unified wizard interface for creating Canvas quizzes pre-configured for SEB proctoring. It handles SEB configuration file generation, Config Key computation, and quiz creation through the Canvas API, all from within Canvas itself.
 
-If this is your first time, see \docs\SETUP_GUIDE.md
+## Documentation
+
+- New here? Start with `docs/SETUP_GUIDE.md` to get a local development environment running.
+- Deploying or maintaining the live tool? See `docs/MAINTENANCE.md` for the DigitalOcean droplet, Nginx, SSL, the Cloudflare Tunnel, the domain, the deploy workflow, and the pressing maintenance issues.
+- Moving to UF's hosted Canvas? See `docs/UF_MIGRATION_GUIDE.md`.
+- Database schema: `docs/db_initial_schema.sql`.
+
+**Repository:** https://github.com/WilsonGoins/LTI-Gators-for-Honor
+
+## Live Deployment
+
+- **Tool (frontend + backend):** https://gatorsforhonor.app (DigitalOcean droplet)
+- **Local Canvas, exposed via Cloudflare Tunnel:** https://canvas-dev.gatorsforhonor.app (only up while a team laptop runs Canvas and the tunnel)
+
+The tool is always on. The Canvas tunnel is not, because Canvas runs locally. See `docs/MAINTENANCE.md` for the full picture and for the issues that will eventually take the deployment down (DigitalOcean credit expiry, domain renewal, the laptop dependency).
 
 ## Tech Stack
-The frontend is built with Next.js (React) and runs on :3002, while the Node.js/Express backend handles LTI 1.3 launch logic on :3001. LTI integration is managed by OIDC. For local development, Canvas LMS runs in Docker on :3000. Quiz metadata and SEB configuration data are persisted in a PostgreSQL database hosted on [Neon](https://neon.tech).
+The frontend is built with Next.js (React) and runs on :3002, while the Node.js/Express backend handles LTI 1.3 launch logic on :3001. LTI launches use the OIDC login flow. For local development, Canvas LMS runs in Docker on :3000. Quiz metadata and SEB configuration data are persisted in a PostgreSQL database hosted on [Neon](https://neon.tech). In production the same two processes run on a DigitalOcean droplet behind Nginx, which terminates SSL and routes traffic to each (see `docs/MAINTENANCE.md`).
 
 ## Daily Development Workflow
 
@@ -70,10 +84,12 @@ See `.env.example` for the full template.
 
 ## References
 
-- [Canvas REST API](https://canvas.instructure.com/doc/api/)
-- [Canvas New Quizzes API](https://canvas.instructure.com/doc/api/new_quizzes.html)
 - [SEB Developer Docs](https://safeexambrowser.org/developer/overview.html)
 - [SEB Config Key Spec](https://safeexambrowser.org/developer/seb-config-key.html)
 - [SEB File Format Spec](https://safeexambrowser.org/developer/seb-file-format.html)
 - [LTI 1.3 Specification](https://www.imsglobal.org/spec/lti/v1p3/)
 - [Neon Docs](https://neon.tech/docs)
+
+## Further Questions?
+
+- Please reach out to Wilson Goins (wilsonfgoins@gmail.com).
