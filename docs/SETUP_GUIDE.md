@@ -367,7 +367,7 @@ This part creates **three separate Canvas credentials**. They are easy to confus
 
 2. **OAuth API key** (Section 3.3). A separate Developer Key of type API, used for the per-student login flow. When a student clicks the launch link, the tool sends them through a Canvas OAuth consent screen using this key, then carries the student's token so SEB can be redirected straight into the quiz. Its ID and secret go in `.env` as `CANVAS_OAUTH_CLIENT_ID` and `CANVAS_OAUTH_CLIENT_SECRET`.
 
-3. **Admin access token** (Section 3.5). A long-lived personal API token generated from the admin profile. The backend uses it to act as the admin for operations like uploading the `.seb` file to course Files, setting and removing the quiz access code, and reading the quiz access date. It goes in `.env` as `CANVAS_ACCESS_TOKEN`.
+3. **Admin access token** (Section 3.5). A long-lived personal API token generated from the admin profile. The backend uses it to act as the admin for Canvas operations: setting and removing the quiz access code, setting the quiz access (unlock) and due dates, and updating the quiz title and instructions (to inject the per-student launch link). It goes in `.env` as `CANVAS_ACCESS_TOKEN`.
 
 The LTI key uses JWT-based authentication (JWK URL, OIDC initiation, public JWK). The OAuth API key uses a shared client ID and secret. They are different kinds of keys for different jobs, and you need both, plus the token.
 
@@ -460,7 +460,7 @@ This is a second, separate Developer Key. It powers the student login flow. Do n
 
 ### 3.5 Generate the Admin Access Token (Required)
 
-The backend cannot upload `.seb` files or set access codes without this token, so this step is required, not optional. It can be generated at any time after the admin account exists.
+The backend cannot set access codes or read quiz unlock dates without this token, so this step is required, not optional. It can be generated at any time after the admin account exists.
 
 1. Go to **Account**, **Settings** (this is the Approved Integrations area).
 2. Scroll to **Approved Integrations** and click **+ New Access Token**.

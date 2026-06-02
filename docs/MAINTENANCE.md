@@ -275,7 +275,7 @@ As of the final submission:
 
 - The tool is deployed and running on the droplet at `https://gatorsforhonor.app`.
 - Canvas runs locally and is exposed via the Cloudflare Tunnel at `https://canvas-dev.gatorsforhonor.app`.
-- The full instructor workflow works: list courses and quizzes, configure SEB settings, generate the `.seb` file, set and remove the access code, and set the quiz access (unlock) date. The generated `.seb` file is stored in the database (as bytes in `seb_config_files.file_data`) and delivered to each student on demand: the student launch flow regenerates and streams a per-student `.seb` rather than distributing a shared file. (The schema retains a `file_link` column and the quiz-sync logic cleans up Canvas file links, so an instructor-side "upload to Canvas Files" path may also exist in `routes/seb.js`; that file was not reviewed here, so this document does not assert it as a current behavior either way.)
+- The full instructor workflow works: list courses and quizzes, configure SEB settings, generate the `.seb` file, set and remove the access code, and set the quiz access (unlock) date. The generated `.seb` file is stored in the database (as bytes in `seb_config_files.file_data`) and delivered to each student on demand: the student launch flow regenerates and streams a per-student `.seb` rather than distributing a shared file.
 - The student launch flow works end to end on local Canvas: a student opens the quiz, clicks the launch link, authorizes the app through a Canvas OAuth consent screen, receives a per-student `.seb` file, and is redirected into the quiz with the access code applied after SEB validates.
 - The usability study (n=166, within-subjects, SEB vs. Respondus LockDown Browser) is complete and written up.
 
