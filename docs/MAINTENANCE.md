@@ -265,6 +265,8 @@ NEXT_PUBLIC_BACKEND_URL=https://gatorsforhonor.app
 
 `CANVAS_ACCESS_TOKEN`, the OAuth client ID and secret, and the database connection strings carry the same meaning as in development. See SETUP_GUIDE.md for what each one is and where it comes from.
 
+The droplet should also set `NODE_ENV=production`. The OAuth cookies in `src/routes/launch.js` only get the `Secure` flag when `NODE_ENV === 'production'`, and a real HTTPS deployment needs that flag (browsers reject `Secure`-less cookies on `SameSite=None`, and over HTTPS the cookies should be `Secure` regardless). `NODE_ENV` is not in `.env.example`, so it is easy to miss; confirm it is set on the droplet.
+
 ---
 
 ## Current State of the Project
@@ -273,7 +275,7 @@ As of the final submission:
 
 - The tool is deployed and running on the droplet at `https://gatorsforhonor.app`.
 - Canvas runs locally and is exposed via the Cloudflare Tunnel at `https://canvas-dev.gatorsforhonor.app`.
-- The full instructor workflow works: list courses and quizzes, configure SEB settings, generate the `.seb` file, upload it to Canvas Files, set and remove the access code, and set the quiz access (unlock) date.
+- The full instructor workflow works: list courses and quizzes, configure SEB settings, generate the `.seb` file, set and remove the access code, and set the quiz access (unlock) date. The generated `.seb` file is stored in the database (as bytes in `seb_config_files.file_data`) and delivered to each student on demand: the student launch flow regenerates and streams a per-student `.seb` rather than distributing a shared file. (The schema retains a `file_link` column and the quiz-sync logic cleans up Canvas file links, so an instructor-side "upload to Canvas Files" path may also exist in `routes/seb.js`; that file was not reviewed here, so this document does not assert it as a current behavior either way.)
 - The student launch flow works end to end on local Canvas: a student opens the quiz, clicks the launch link, authorizes the app through a Canvas OAuth consent screen, receives a per-student `.seb` file, and is redirected into the quiz with the access code applied after SEB validates.
 - The usability study (n=166, within-subjects, SEB vs. Respondus LockDown Browser) is complete and written up.
 
@@ -307,6 +309,12 @@ The database is on Neon's free tier. Confirm it has not been paused for inactivi
 
 ## Known Smaller Issues
 
-- The `/health` endpoint sits behind LTI authentication. It should be public for a real health check but this is non-blocking.
-- `devMode` in the backend `app.js` is set to `false`. Set it to `true` temporarily if you need verbose LTI debug logging, then set it back.
+- The `/health` endpoint is public and returns a small JSON status object (service name, timestamp, version). It is useful for an uptime check against `https://gatorsforhonor.app/health`.
+- There is no `devMode` flag in `src/app.js` (that was an ltijs convention this hand-rolled tool does not use). The backend logs through plain `console.log` statements, visible via `pm2 logs backend`. If you need quieter or more verbose output, adjust the logging in the source.
 - A roughly 2 hour Canvas timezone offset was traced to the internal Docker Canvas configuration, not the tool's code. It is deliberately not fixed in the application code. Migrating off the local Docker Canvas is expected to resolve it.
+- The tool's LTI signing keys are generated in memory at backend startup (`src/app.js`, `initializeKeys`) and are not persisted. Every backend restart (including every `pm2 restart backend`) produces a fresh keypair. This works because Canvas fetches the tool's public key from `/keys` at launch time and picks up the current key, but it does mean there is no stable keypair on disk. The practical requirement is that Canvas must be able to reach the tool's `/keys` URL during a launch. If a launch fails right after a restart, this is not the likely cause (Canvas re-fetches), but it is worth knowing the keys are ephemeral. A future hardening step would be to persist the keypair (env var or file) so it survives restarts.
+- `SESSION_SECRET` and `FRONTEND_URL` are read from the environment in `src/app.js` but are not in `.env.example`. Locally they fall back to safe defaults (`FRONTEND_URL` defaults to `http://localhost:3002`, `SESSION_SECRET` to a random value generated each boot). In production, set both: `FRONTEND_URL` so redirects and CORS target the right origin, and `SESSION_SECRET` so instructor sessions survive a backend restart (otherwise the random per-boot secret invalidates existing session tokens on every restart).
+
+## Maintenance Questions
+- For questions about Neon DBMS reach out to Shane Downs (sdowns1017@gmail.com).
+- For questions about GitHub, DigitalOcean, Name.com, Cloudflare, or anything else reach out to Wilson Goins (wilsonfgoins@gmail.com).

@@ -285,7 +285,7 @@ Both are available on the Neon dashboard under "Connection Details." Toggle the 
 
 ### 2.4 Initialize the Database Schema
 
-The schema file creates three tables (`quizzes`, `seb_settings`, `seb_config_files`) and their triggers.
+The schema file creates five tables: `quizzes`, `seb_config_files`, and `seb_settings` (the core quiz and SEB configuration tables), plus `users` and `launch_sessions` (which back the per-student OAuth launch flow). The application sets `updated_at` on writes, so there are no database triggers.
 
 **Option A — Neon SQL Editor (easiest):**
 1. In the Neon dashboard, click **SQL Editor** in the left sidebar
@@ -302,7 +302,7 @@ Verify it worked by running this in the SQL Editor:
 SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
 ```
 
-You should see three rows: `quizzes`, `seb_config_files`, `seb_settings`.
+You should see five rows: `quizzes`, `seb_config_files`, `seb_settings`, `users`, and `launch_sessions`.
 
 ### 2.5 Configure Environment
 
@@ -315,7 +315,6 @@ cp .env.example .env
 ```
 
 ```
-LTI_PLATFORM_URL=https://canvas.instructure.com
 LTI_CLIENT_ID=<leave blank for now — fill in after creating the LTI key in Canvas>
 CANVAS_OAUTH_CLIENT_ID=<leave blank for now — fill in after creating the OAuth API key>
 CANVAS_OAUTH_CLIENT_SECRET=<leave blank for now — fill in after creating the OAuth API key>
@@ -345,10 +344,10 @@ Verify it's working: `http://localhost:3001/keys` should return a JSON object wi
 
 ### 2.7 Start the Frontend Server
 
-Open a **second terminal** in the project root and run:
+Open a **second terminal** and start the frontend from the `frontend` directory inside the repo:
 
 ```bash
-cd frontend    # or wherever the Next.js app lives within the repo
+cd frontend    # from the project root; this is where the Next.js app lives
 npm run dev
 ```
 
@@ -504,8 +503,6 @@ This uses the LTI key's Client ID from Section 3.2.
 
 If it works, your environment is fully set up.
 
-If it works, your environment is fully set up.
-
 ---
 
 ## Troubleshooting
@@ -650,8 +647,8 @@ docker compose down
 
 ## Known Issues
 
-- `/health` endpoint is behind LTI authentication (should be public) — minor, non-blocking
-- `devMode` in app.js is set to `false` — set to `true` temporarily if you need debug logging for LTI issues
+- The `/health` endpoint is public and returns a small JSON status object — handy for confirming the backend is up at `http://localhost:3001/health`.
+- There is no `devMode` flag in `app.js`; the backend logs via plain `console.log`, visible in the terminal running `npm run dev`. Adjust logging in the source if you need more or less detail.
 - Canvas first boot on WSL 2 can take up to 5 minutes — subsequent boots are faster due to caching
 - On the first launch, each student sees a Canvas OAuth consent screen for the OAuth API key and must authorize the tool once. This is expected behavior of the student login flow.
 

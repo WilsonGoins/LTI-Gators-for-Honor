@@ -31,7 +31,7 @@ The Canvas SEB Quiz Creator is an LTI 1.3 application that provides a unified wi
 The tool is always on. The Canvas tunnel is not, because Canvas runs locally. See `docs/MAINTENANCE.md` for the full picture and for the issues that will eventually take the deployment down (DigitalOcean credit expiry, domain renewal, the laptop dependency).
 
 ## Tech Stack
-The frontend is built with Next.js (React) and runs on :3002, while the Node.js/Express backend handles LTI 1.3 launch logic on :3001. LTI launches use the OIDC login flow. For local development, Canvas LMS runs in Docker on :3000. Quiz metadata and SEB configuration data are persisted in a PostgreSQL database hosted on [Neon](https://neon.tech). In production the same two processes run on a DigitalOcean droplet behind Nginx, which terminates SSL and routes traffic to each (see `docs/MAINTENANCE.md`).
+The frontend is built with Next.js (React) and runs on :3002, while the Node.js/Express backend handles LTI 1.3 launch logic on :3001. LTI launches use a hand-rolled LTI 1.3 OIDC implementation (in `src/app.js`), not a third-party LTI library: the backend generates its own signing keys, serves them at `/keys`, and verifies each launch against Canvas's JWKS. For local development, Canvas LMS runs in Docker on :3000. Quiz metadata and SEB configuration data are persisted in a PostgreSQL database hosted on [Neon](https://neon.tech). In production the same two processes run on a DigitalOcean droplet behind Nginx, which terminates SSL and routes traffic to each (see `docs/MAINTENANCE.md`).
 
 ## Daily Development Workflow
 
@@ -92,4 +92,4 @@ See `.env.example` for the full template.
 
 ## Further Questions?
 
-- Please reach out to Wilson Goins (wilsonfgoins@gmail.com).
+- Please reach out to Wilson Goins (wilsonfgoins@gmail.com) or Shane Downs (sdowns1017@gmail.com).

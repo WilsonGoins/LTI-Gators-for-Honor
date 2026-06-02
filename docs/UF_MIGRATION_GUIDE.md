@@ -38,7 +38,6 @@ The full JSON to paste is in SETUP_GUIDE.md Section 3.1; just replace the localh
 Update the `.env` file to point at UF's Canvas. These are the variables that actually exist in `.env.example`:
 
 ```
-LTI_PLATFORM_URL=https://ufl.instructure.com
 LTI_CLIENT_ID=<client ID from the UF LTI Developer Key>
 CANVAS_OAUTH_CLIENT_ID=<client ID from the UF OAuth API key>
 CANVAS_OAUTH_CLIENT_SECRET=<secret from the UF OAuth API key>
@@ -51,10 +50,7 @@ GATE_BASE_URL=https://YOUR_PRODUCTION_URL/seb
 
 `DATABASE_URL` and `DATABASE_URL_UNPOOLED` stay pointed at the same Neon database unless UF requires the data to live elsewhere.
 
-> **Verify before assuming.** Earlier versions of this guide listed `LTI_AUTHENTICATION_ENDPOINT`, `LTI_ACCESS_TOKEN_ENDPOINT`, and `LTI_KEYSET_ENDPOINT`. Those names are not in the current `.env.example`. The LTI library (ltijs) is configured with the platform's authorization, token, and keyset endpoints somewhere in the backend setup. Before migrating, confirm exactly where those three UF Canvas endpoints are set (in `.env`, in `config/`, or in the platform-registration call) and update them there. The UF Canvas values are:
-> - Authorization: `https://ufl.instructure.com/api/lti/authorize_redirect`
-> - Access token: `https://ufl.instructure.com/login/oauth2/token`
-> - Keyset (JWKS): `https://ufl.instructure.com/api/lti/security/jwks`
+> **No LTI library endpoints to configure.** This tool does not use the ltijs library. It implements the LTI 1.3 OIDC handshake by hand in `src/app.js`: it generates its own signing keys at startup, serves them at `/keys`, reads the issuer from the launch request Canvas sends, and fetches Canvas's public keys directly from `CANVAS_URL` + `/api/lti/security/jwks` to verify each launch. Because the JWKS location is derived from `CANVAS_URL`, there are no separate authorization, token, or keyset endpoint variables to set. Pointing `CANVAS_URL` and `CANVAS_API_URL` at `ufl.instructure.com` is what redirects the LTI flow to UF Canvas. (If a future maintainer rewrites this on top of the ltijs library instead, that library does require the platform's issuer and its authorization, token, and keyset endpoints at registration time. Those UF Canvas values would be `https://ufl.instructure.com/api/lti/authorize_redirect`, `https://ufl.instructure.com/login/oauth2/token`, and `https://ufl.instructure.com/api/lti/security/jwks`.)
 
 ### 3. HTTPS Requirement
 
@@ -64,18 +60,15 @@ UF Canvas requires all LTI tools to use HTTPS. Options:
 - Use a reverse proxy like nginx with a Let's Encrypt certificate
 - Use Cloudflare Tunnel
 
-### 4. Cookie Configuration
+### 4. Cross-Origin and Cookie Settings for Production
 
-In `src/app.js`, change the cookie settings for production:
+Earlier versions of this guide referenced an ltijs-style `cookies: { secure, sameSite }` block and a `devMode` flag. Those do not exist in this codebase (`src/app.js` does not use ltijs). The real cross-origin pieces to check for a production, cross-site deployment are:
 
-```javascript
-cookies: {
-  secure: true,       // HTTPS only
-  sameSite: 'None',   // Required for cross-origin LTI launches
-}
-```
+- **CSP `frame-ancestors`** in `src/app.js`. The tool sets `Content-Security-Policy: frame-ancestors 'self' <canvasUrl> http://localhost:* ...` so Canvas can iframe it. For UF, confirm this allows `https://ufl.instructure.com` (it is derived from `CANVAS_URL`, so repointing `CANVAS_URL` should cover it, but verify the localhost entries are acceptable to leave in or should be removed for production).
+- **CORS `Access-Control-Allow-Origin`** in `src/app.js`, which is set from `FRONTEND_URL`. Make sure `FRONTEND_URL` is set to the production frontend origin so the browser allows the frontend to call the backend.
+- **OAuth cookies** used by the student launch flow are set in `src/routes/launch.js`. There are three: `canvas_oauth_state` and `canvas_oauth_return_to` (set just before redirecting to Canvas) and `canvas_user` (set after a successful token exchange). All three are currently created with `sameSite: 'lax'` and `secure: process.env.NODE_ENV === 'production'`. **This will break the OAuth round-trip in a cross-domain UF deployment** and must be changed. When the tool (e.g. `gatorsforhonor.app`) and Canvas (`ufl.instructure.com`) are on different domains, the browser will not send a `SameSite=Lax` cookie back on the cross-site redirect from Canvas to the tool's `/oauth/callback`, so the state-match check (`storedState !== state`) fails and the launch is rejected. For a cross-domain deployment, change those cookies to `sameSite: 'none'`. Browsers require `Secure` whenever `SameSite=None`, so you must also ensure the `secure` flag is actually on, which means setting `NODE_ENV=production` on the droplet (see below). In short: set `NODE_ENV=production` **and** change `sameSite` from `'lax'` to `'none'` on the three cookies in `routes/launch.js`.
 
-Also set `devMode: false`.
+There is no `devMode` flag to toggle. The backend logs via plain `console.log`; adjust verbosity in the source if needed.
 
 ---
 
@@ -121,7 +114,8 @@ If UFIT offers Node.js hosting, deploy the `src/` directory with `npm start`.
 - [ ] Tool accessible via HTTPS at production URL
 - [ ] LTI launch works from a UF Canvas course
 - [ ] Instructor role check passes for UF instructor accounts
-- [ ] Quiz operations via Canvas API work against `ufl.instructure.com` (list quizzes, set access code, upload `.seb` file, set access date)
+- [ ] Quiz operations via Canvas API work against `ufl.instructure.com` (list quizzes, set and remove access code, read quiz access/unlock date)
+- [ ] Student `.seb` delivery works: the launch flow streams a per-student `.seb` file from the tool
 - [ ] Student launch flow works end to end: launch link, OAuth consent, `.seb` download, redirect into the quiz with access code applied
 - [ ] Generated `.seb` files open correctly in SEB on Windows and macOS
 - [ ] Config Key matches what SEB sends in request headers
