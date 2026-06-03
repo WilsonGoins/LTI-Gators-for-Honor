@@ -53,7 +53,8 @@ unpooledPool.on("error", (err) => {
 });
 
 
-// Query with retry for all database transactions
+// Query with retry for single-statement queries.
+// Use this for all non-transactional reads/writes.
 async function queryWithRetry(sql, params, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -69,90 +70,117 @@ async function queryWithRetry(sql, params, retries = 2) {
 }
 
 
-// ─── syncQuizzes (with retry) ───────────────────────────────────────────────
-// Upserts all quizzes returned from Canvas and deletes any that are no longer there.
-async function syncQuizzes(courseId, rows, retries = 2) {
+// Transaction with retry for multi-statement operations.
+//
+// Acquires a fresh client from the unpooled pool, runs BEGIN, executes the
+// caller's `fn(client)`, then COMMIT. On a connection-level error, rolls back
+// (best effort), destroys the bad client, and retries the whole transaction
+// from the beginning (a fresh BEGIN on a fresh connection). Non-connection
+// errors are not retried — they roll back and rethrow on the first attempt.
+//
+// `fn` receives the connected pg client and should return whatever value the
+// caller wants surfaced. The return value of `fn` becomes the return value of
+// txWithRetry on a successful commit.
+//
+// `label` is just for log messages so retry warnings are identifiable.
+async function txWithRetry(fn, { retries = 2, label = "transaction" } = {}) {
+  let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const client = await unpooledPool.connect();
 
     try {
       await client.query("BEGIN");
-
-      if (rows.length > 0) {
-        const values = [];
-        const placeholders = rows.map((row, i) => {
-          const offset = i * 4;
-          values.push(row.courseId, row.quizId, row.title, row.quizType);
-          return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`;
-        });
-
-        const upsertSql = `
-          INSERT INTO quizzes (course_id, quiz_id, title, quiz_type)
-          VALUES ${placeholders.join(", ")}
-          ON CONFLICT (course_id, quiz_id)
-          DO UPDATE SET
-            title      = EXCLUDED.title,
-            quiz_type  = EXCLUDED.quiz_type,
-            updated_at = now()
-        `;
-        await client.query(upsertSql, values);
-      }
-
-      const canvasQuizIds = rows.map((r) => r.quizId);
-
-      // Before deleting, find file_links for quizzes being removed
-      let deletedFileLinks = [];
-
-      if (canvasQuizIds.length === 0) {
-        const { rows: deleted } = await client.query(
-          `SELECT file_link FROM seb_config_files
-           WHERE course_id = $1 AND file_link IS NOT NULL`,
-          [courseId]
-        );
-        deletedFileLinks = deleted.map(r => r.file_link);
-
-        await client.query(`DELETE FROM quizzes WHERE course_id = $1`, [courseId]);
-        await client.query(`DELETE FROM seb_config_files WHERE course_id = $1`, [courseId]);
-        await client.query(`DELETE FROM seb_settings WHERE course_id = $1`, [courseId]);
-      } else {
-        const { rows: deleted } = await client.query(
-          `SELECT file_link FROM seb_config_files
-           WHERE course_id = $1
-             AND quiz_id != ALL($2::text[])
-             AND file_link IS NOT NULL`,
-          [courseId, canvasQuizIds]
-        );
-        deletedFileLinks = deleted.map(r => r.file_link);
-
-        await client.query(
-          `DELETE FROM quizzes WHERE course_id = $1 AND quiz_id != ALL($2::text[])`,
-          [courseId, canvasQuizIds]
-        );
-        await client.query(
-          `DELETE FROM seb_config_files WHERE course_id = $1 AND quiz_id != ALL($2::text[])`,
-          [courseId, canvasQuizIds]
-        );
-        await client.query(
-          `DELETE FROM seb_settings WHERE course_id = $1 AND quiz_id != ALL($2::text[])`,
-          [courseId, canvasQuizIds]
-        );
-      }
-
+      const result = await fn(client);
       await client.query("COMMIT");
-      return deletedFileLinks;
+      return result;
     } catch (err) {
       await client.query("ROLLBACK").catch(() => {});
+      lastErr = err;
 
       if (isConnectionError(err) && attempt < retries) {
-        console.warn(`syncQuizzes connection error (attempt ${attempt + 1}/${retries}), retrying...`);
+        console.warn(`${label} connection error (attempt ${attempt + 1}/${retries}), retrying...`);
         continue;
       }
       throw err;
     } finally {
-      // pass true to destroy the connection after an error instead of returning it to the pool
+      // pass true to destroy the connection after an error instead of
+      // returning a possibly-broken client to the pool
       client.release(true);
     }
   }
+
+  // Defensive: shouldn't be reachable — the loop either returns on success or
+  // throws on the final attempt. Surface the last error if we somehow get here.
+  throw lastErr || new Error(`${label} failed after ${retries + 1} attempts`);
+}
+
+
+// ─── syncQuizzes ────────────────────────────────────────────────────────────
+// Upserts all quizzes returned from Canvas and deletes any that are no longer there.
+async function syncQuizzes(courseId, rows) {
+  return txWithRetry(async (client) => {
+    if (rows.length > 0) {
+      const values = [];
+      const placeholders = rows.map((row, i) => {
+        const offset = i * 4;
+        values.push(row.courseId, row.quizId, row.title, row.quizType);
+        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`;
+      });
+
+      const upsertSql = `
+        INSERT INTO quizzes (course_id, quiz_id, title, quiz_type)
+        VALUES ${placeholders.join(", ")}
+        ON CONFLICT (course_id, quiz_id)
+        DO UPDATE SET
+          title      = EXCLUDED.title,
+          quiz_type  = EXCLUDED.quiz_type,
+          updated_at = now()
+      `;
+      await client.query(upsertSql, values);
+    }
+
+    const canvasQuizIds = rows.map((r) => r.quizId);
+
+    // Before deleting, find file_links for quizzes being removed
+    let deletedFileLinks = [];
+
+    if (canvasQuizIds.length === 0) {
+      const { rows: deleted } = await client.query(
+        `SELECT file_link FROM seb_config_files
+         WHERE course_id = $1 AND file_link IS NOT NULL`,
+        [courseId]
+      );
+      deletedFileLinks = deleted.map(r => r.file_link);
+
+      await client.query(`DELETE FROM quizzes WHERE course_id = $1`, [courseId]);
+      await client.query(`DELETE FROM seb_config_files WHERE course_id = $1`, [courseId]);
+      await client.query(`DELETE FROM seb_settings WHERE course_id = $1`, [courseId]);
+    } else {
+      const { rows: deleted } = await client.query(
+        `SELECT file_link FROM seb_config_files
+         WHERE course_id = $1
+           AND quiz_id != ALL($2::text[])
+           AND file_link IS NOT NULL`,
+        [courseId, canvasQuizIds]
+      );
+      deletedFileLinks = deleted.map(r => r.file_link);
+
+      await client.query(
+        `DELETE FROM quizzes WHERE course_id = $1 AND quiz_id != ALL($2::text[])`,
+        [courseId, canvasQuizIds]
+      );
+      await client.query(
+        `DELETE FROM seb_config_files WHERE course_id = $1 AND quiz_id != ALL($2::text[])`,
+        [courseId, canvasQuizIds]
+      );
+      await client.query(
+        `DELETE FROM seb_settings WHERE course_id = $1 AND quiz_id != ALL($2::text[])`,
+        [courseId, canvasQuizIds]
+      );
+    }
+
+    return deletedFileLinks;
+  }, { label: "syncQuizzes" });
 }
 
 
@@ -165,7 +193,6 @@ async function getSEBStatusByCourse(courseId) {
       (s.quiz_id IS NOT NULL)       AS seb_configured,
       s.preset_name,
       s.force_fullscreen,
-      s.allow_quit,
       s.block_screen_sharing,
       s.block_virtual_machine,
       s.block_clipboard,
@@ -174,7 +201,6 @@ async function getSEBStatusByCourse(courseId) {
       s.enable_url_filter,
       s.allowed_url_patterns,
       s.access_code,
-      s.quit_password,
       s.ip_filter_enabled,
       s.allowed_ip_ranges,
       s.created_at                  AS configured_at
@@ -196,7 +222,6 @@ async function getSEBStatusByCourse(courseId) {
         hasAccessCode: Boolean(row.access_code),
         settings: {
           securityLevel: row.preset_name || 'standard',
-          allowQuit: row.allow_quit ?? false,
           allowScreenSharing: !(row.block_screen_sharing ?? true),
           allowVirtualMachine: !(row.block_virtual_machine ?? true),
           allowSpellCheck: !(row.disable_spell_check ?? true),
@@ -204,7 +229,6 @@ async function getSEBStatusByCourse(courseId) {
           urlFilterEnabled: row.enable_url_filter ?? false,
           allowedDomains: row.allowed_url_patterns || [],
           accessCode: row.access_code || null,
-          quitPassword: row.quit_password || null,
           configuredAt: row.configured_at ? row.configured_at.toISOString() : new Date().toISOString(),
         },
       });
@@ -231,7 +255,6 @@ async function getSEBSettings(courseId, quizId) {
   const row = rows[0];
   return {
     securityLevel: row.preset_name || 'standard',
-    allowQuit: row.allow_quit ?? false,
     allowScreenSharing: !(row.block_screen_sharing ?? true),
     allowVirtualMachine: !(row.block_virtual_machine ?? true),
     allowSpellCheck: !(row.disable_spell_check ?? true),
@@ -239,102 +262,77 @@ async function getSEBSettings(courseId, quizId) {
     urlFilterEnabled: row.enable_url_filter ?? false,
     allowedDomains: row.allowed_url_patterns || [],
     accessCode: row.access_code || null,
-    quitPassword: row.quit_password || null,
     configuredAt: row.created_at ? row.created_at.toISOString() : null,
   };
 }
 
 
-// ─── Save SEB Config (settings + binary file) with retry ─────────────────────
+// ─── Save SEB Config (settings + binary file) ────────────────────────────────
 // Called when the instructor clicks "Save & Download .seb" in the config dialog.
-async function saveSEBConfig(courseId, quizId, { settings, fileData, fileName, configKey, accessCode, canvasQuizURL }, retries = 2) {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const client = await unpooledPool.connect();
+async function saveSEBConfig(courseId, quizId, { settings, fileData, fileName, configKey, accessCode, canvasQuizURL }) {
+  return txWithRetry(async (client) => {
+    // Upsert seb_settings — map our frontend names to column names
+    await client.query(`
+      INSERT INTO seb_settings (
+        course_id, quiz_id, preset_name,
+        force_fullscreen,
+        block_screen_sharing, block_virtual_machine,
+        block_clipboard, block_printing, disable_spell_check,
+        enable_url_filter, allowed_url_patterns,
+        access_code, ip_filter_enabled, allowed_ip_ranges,
+        created_at, updated_at
+      ) VALUES (
+        $1, $2, $3,
+        $4,
+        $5, $6,
+        $7, $8, $9,
+        $10, $11,
+        $12, $13, $14,
+        now(), now()
+      )
+      ON CONFLICT (course_id, quiz_id)
+      DO UPDATE SET
+        preset_name          = EXCLUDED.preset_name,
+        force_fullscreen     = EXCLUDED.force_fullscreen,
+        block_screen_sharing = EXCLUDED.block_screen_sharing,
+        block_virtual_machine = EXCLUDED.block_virtual_machine,
+        block_clipboard      = EXCLUDED.block_clipboard,
+        block_printing       = EXCLUDED.block_printing,
+        disable_spell_check  = EXCLUDED.disable_spell_check,
+        enable_url_filter    = EXCLUDED.enable_url_filter,
+        allowed_url_patterns = EXCLUDED.allowed_url_patterns,
+        access_code          = EXCLUDED.access_code,
+        ip_filter_enabled    = EXCLUDED.ip_filter_enabled,
+        allowed_ip_ranges    = EXCLUDED.allowed_ip_ranges,
+        updated_at           = now()
+    `, [
+      courseId, quizId, settings.securityLevel,
+      settings.browserViewMode === 1,                   // force_fullscreen
+      !settings.allowScreenSharing,                      // block_screen_sharing (inverted)
+      !settings.allowVirtualMachine,                     // block_virtual_machine (inverted)
+      true,                                              // block_clipboard (default secure)
+      true,                                              // block_printing (default secure)
+      !settings.allowSpellCheck,                         // disable_spell_check (inverted)
+      settings.urlFilterEnabled,                         // enable_url_filter
+      JSON.stringify(settings.allowedDomains || []),      // allowed_url_patterns as JSONB
+      accessCode || null,                                // access_code
+      false,                                             // ip_filter_enabled (not yet implemented)
+      JSON.stringify([]),                                 // allowed_ip_ranges (not yet implemented)
+    ]);
 
-    try {
-      await client.query("BEGIN");
-
-      // Upsert seb_settings — map our frontend names to column names
-      await client.query(`
-        INSERT INTO seb_settings (
-          course_id, quiz_id, preset_name,
-          force_fullscreen, allow_quit, quit_password,
-          block_screen_sharing, block_virtual_machine,
-          block_clipboard, block_printing, disable_spell_check,
-          enable_url_filter, allowed_url_patterns,
-          access_code, ip_filter_enabled, allowed_ip_ranges,
-          created_at, updated_at
-        ) VALUES (
-          $1, $2, $3,
-          $4, $5, $6,
-          $7, $8,
-          $9, $10, $11,
-          $12, $13,
-          $14, $15, $16,
-          now(), now()
-        )
-        ON CONFLICT (course_id, quiz_id)
-        DO UPDATE SET
-          preset_name          = EXCLUDED.preset_name,
-          force_fullscreen     = EXCLUDED.force_fullscreen,
-          allow_quit           = EXCLUDED.allow_quit,
-          quit_password   = EXCLUDED.quit_password,
-          block_screen_sharing = EXCLUDED.block_screen_sharing,
-          block_virtual_machine = EXCLUDED.block_virtual_machine,
-          block_clipboard      = EXCLUDED.block_clipboard,
-          block_printing       = EXCLUDED.block_printing,
-          disable_spell_check  = EXCLUDED.disable_spell_check,
-          enable_url_filter    = EXCLUDED.enable_url_filter,
-          allowed_url_patterns = EXCLUDED.allowed_url_patterns,
-          access_code          = EXCLUDED.access_code,
-          ip_filter_enabled    = EXCLUDED.ip_filter_enabled,
-          allowed_ip_ranges    = EXCLUDED.allowed_ip_ranges,
-          updated_at           = now()
-      `, [
-        courseId, quizId, settings.securityLevel,
-        settings.browserViewMode === 1,                   // force_fullscreen
-        settings.allowQuit,                                // allow_quit
-        settings.quitPassword || null,                     // quit_password
-        !settings.allowScreenSharing,                      // block_screen_sharing (inverted)
-        !settings.allowVirtualMachine,                     // block_virtual_machine (inverted)
-        true,                                              // block_clipboard (default secure)
-        true,                                              // block_printing (default secure)
-        !settings.allowSpellCheck,                         // disable_spell_check (inverted)
-        settings.urlFilterEnabled,                         // enable_url_filter
-        JSON.stringify(settings.allowedDomains || []),      // allowed_url_patterns as JSONB
-        accessCode || null,                                // access_code
-        false,                                             // ip_filter_enabled (not yet implemented)
-        JSON.stringify([]),                                 // allowed_ip_ranges (not yet implemented)
-      ]);
-
-      // Upsert seb_config_files
-      await client.query(`
-        INSERT INTO seb_config_files (course_id, quiz_id, file_name, file_data, config_key, canvas_quiz_url, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, now(), now())
-        ON CONFLICT (course_id, quiz_id)
-        DO UPDATE SET
-          file_name       = EXCLUDED.file_name,
-          file_data       = EXCLUDED.file_data,
-          config_key      = EXCLUDED.config_key,
-          canvas_quiz_url = EXCLUDED.canvas_quiz_url,
-          updated_at      = now()
-      `, [courseId, quizId, fileName, fileData, configKey, canvasQuizURL || null]);
-
-      await client.query("COMMIT");
-      return; // success — exit the retry loop
-    } catch (err) {
-      await client.query("ROLLBACK").catch(() => {});
-
-      if (isConnectionError(err) && attempt < retries) {
-        console.warn(`saveSEBConfig connection error (attempt ${attempt + 1}/${retries}), retrying...`);
-        continue;
-      }
-      throw err;
-    } finally {
-      // pass true to destroy the connection instead of returning it to the pool
-      client.release(true);
-    }
-  }
+    // Upsert seb_config_files
+    await client.query(`
+      INSERT INTO seb_config_files (course_id, quiz_id, file_name, file_data, config_key, canvas_quiz_url, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, now(), now())
+      ON CONFLICT (course_id, quiz_id)
+      DO UPDATE SET
+        file_name       = EXCLUDED.file_name,
+        file_data       = EXCLUDED.file_data,
+        config_key      = EXCLUDED.config_key,
+        canvas_quiz_url = EXCLUDED.canvas_quiz_url,
+        updated_at      = now()
+    `, [courseId, quizId, fileName, fileData, configKey, canvasQuizURL || null]);
+  }, { label: "saveSEBConfig" });
 }
 
 
@@ -400,8 +398,6 @@ async function getSEBConfigForStudent(courseId, quizId) {
     SELECT
       s.preset_name,
       s.force_fullscreen,
-      s.allow_quit,
-      s.quit_password,
       s.block_screen_sharing,
       s.block_virtual_machine,
       s.disable_spell_check,

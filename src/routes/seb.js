@@ -42,7 +42,6 @@ router.get('/presets', (req, res) => {
 //     canvasQuizURL: "http://canvas.docker/courses/1/quizzes/5/take",
 //     preset: "standard",
 //     allowedDomains: ["canvas.docker"],
-//     quitPassword: "optional",
 //     overrides: {},
 //     accessCode: "a1b2c3..." | null
 //   }
@@ -53,7 +52,7 @@ router.post('/generate', express.json(), async (req, res) => {
   try {
     const {
       courseId, quizId,
-      canvasQuizURL, preset, allowedDomains, quitPassword, overrides,
+      canvasQuizURL, preset, allowedDomains, overrides,
       accessCode, quizTitle, quizType,
     } = req.body;
 
@@ -70,7 +69,6 @@ router.post('/generate', express.json(), async (req, res) => {
       quizId,
       preset: preset || 'standard',
       allowedDomains: allowedDomains || [],
-      quitPassword: quitPassword || null,
       overrides: overrides || {},
     });
 
@@ -86,14 +84,12 @@ router.post('/generate', express.json(), async (req, res) => {
     await saveSEBConfig(courseId, quizId, {
       settings: {
         securityLevel: preset || 'standard',
-        allowQuit: (overrides || {}).allowQuit ?? false,
         allowScreenSharing: (overrides || {}).allowScreenSharing ?? false,
         allowVirtualMachine: (overrides || {}).allowVirtualMachine ?? false,
         allowSpellCheck: (overrides || {}).allowSpellCheck ?? false,
         browserViewMode: (overrides || {}).browserViewMode ?? 1,
         urlFilterEnabled: (overrides || {}).urlFilterEnabled ?? true,
         allowedDomains: allowedDomains || [],
-        quitPassword: quitPassword || null,
       },
       fileData: sebFile,
       fileName: filename,
@@ -203,6 +199,115 @@ router.post('/access-code', express.json(), async (req, res) => {
     res.json({ accessCode });
   } catch (err) {
     console.error('Access code error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /seb/unlock-date
+// Sets the unlock_at (access) date on a Canvas quiz.
+// ---------------------------------------------------------------------------
+
+router.post('/unlock-date', express.json(), async (req, res) => {
+  try {
+    const { courseId, quizId, quizType, unlockAt } = req.body;
+
+    if (!courseId || !quizId || !unlockAt) {
+      return res.status(400).json({ error: 'courseId, quizId, and unlockAt are required' });
+    }
+
+    const canvasToken = process.env.CANVAS_ACCESS_TOKEN;
+    if (!canvasToken) {
+      return res.status(500).json({ error: 'Canvas access token not configured' });
+    }
+
+    let canvasRes;
+    if (quizType === 'new') {
+      canvasRes = await fetch(
+        `${CANVAS_URL}/api/quiz/v1/courses/${courseId}/quizzes/${quizId}`,
+        {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${canvasToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ quiz: { unlock_at: unlockAt } }),
+        }
+      );
+    } else {
+      canvasRes = await fetch(
+        `${CANVAS_URL}/api/v1/courses/${courseId}/quizzes/${quizId}`,
+        {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${canvasToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ quiz: { unlock_at: unlockAt } }),
+        }
+      );
+    }
+
+    if (!canvasRes.ok) {
+      const errBody = await canvasRes.text();
+      console.error('Canvas unlock_at error:', canvasRes.status, errBody);
+      return res.status(502).json({ error: 'Failed to set access date on Canvas', detail: `Canvas returned ${canvasRes.status}` });
+    }
+
+    console.log(`✅ Access date set for course ${courseId}, quiz ${quizId}`);
+    res.json({ unlockAt });
+  } catch (err) {
+    console.error('Unlock date error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /seb/due-date
+// Sets the due_at date on a Canvas quiz. Accepts null in dueAt to clear.
+// ---------------------------------------------------------------------------
+
+router.post('/due-date', express.json(), async (req, res) => {
+  try {
+    const { courseId, quizId, quizType, dueAt } = req.body;
+
+    if (!courseId || !quizId) {
+      return res.status(400).json({ error: 'courseId and quizId are required' });
+    }
+
+    const canvasToken = process.env.CANVAS_ACCESS_TOKEN;
+    if (!canvasToken) {
+      return res.status(500).json({ error: 'Canvas access token not configured' });
+    }
+
+    // dueAt may be null — Canvas accepts null to clear the due date.
+    const dueAtValue = dueAt ?? null;
+
+    let canvasRes;
+    if (quizType === 'new') {
+      canvasRes = await fetch(
+        `${CANVAS_URL}/api/quiz/v1/courses/${courseId}/quizzes/${quizId}`,
+        {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${canvasToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ quiz: { due_at: dueAtValue } }),
+        }
+      );
+    } else {
+      canvasRes = await fetch(
+        `${CANVAS_URL}/api/v1/courses/${courseId}/quizzes/${quizId}`,
+        {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${canvasToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ quiz: { due_at: dueAtValue } }),
+        }
+      );
+    }
+
+    if (!canvasRes.ok) {
+      const errBody = await canvasRes.text();
+      console.error('Canvas due_at error:', canvasRes.status, errBody);
+      return res.status(502).json({ error: 'Failed to set due date on Canvas', detail: `Canvas returned ${canvasRes.status}` });
+    }
+
+    console.log(`✅ Due date set for course ${courseId}, quiz ${quizId}`);
+    res.json({ dueAt: dueAtValue });
+  } catch (err) {
+    console.error('Due date error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -422,8 +527,7 @@ async function updateQuizForSEB(courseId, quizId, quizType, currentTitle, curren
       <p style="margin-bottom: 8px;">You must use Safe Exam Browser to take this exam. Please complete these steps <strong>when you are ready to begin</strong>:</p>
       <ol style="margin-bottom: 12px;">
         <li>If you haven't already, <a href="https://safeexambrowser.org/download_en.html" target="_blank">download and install Safe Exam Browser</a>.</li>
-        <li><a href="${launchURL}"><strong>Click here to launch the exam</strong></a>. Your personal exam configuration file will download automatically.</li>
-        <li>Open the downloaded <code>.seb</code> file to launch Safe Exam Browser and begin your exam.</li>
+        <li><a href="${launchURL}"><strong>Click here to launch the exam</strong></a>. Then follow the on-screen instructions.</li>
       </ol>
       <p style="margin: 0; font-size: 0.9em; color: #856404;">If you experience technical issues, contact your instructor before the exam deadline.</p>
     </div>

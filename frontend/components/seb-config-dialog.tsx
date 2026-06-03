@@ -11,12 +11,15 @@ import {
     Loader2,
     AlertTriangle,
     Pencil,
+    Calendar,
+    CalendarClock,
 } from "lucide-react";
 import { Quiz } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { BACKEND_URL, setAccessCode } from "@/lib/api";
+import { BACKEND_URL, setAccessCode, setUnlockDate, setDueDate as apiSetDueDate } from "@/lib/api";
 import { SEBChangesInfo } from "@/components/seb-changes-info";
+import { AccessDateTimePicker } from "@/components/access-date-time-picker";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,7 +29,7 @@ interface SEBConfigDialogProps {
     courseId: string;
     canvasUrl: string;
     onClose: () => void;
-    onSaved: (quizId: string, accessCodeSet: boolean, settings: import("@/lib/types").SEBSettings) => void;
+    onSaved: (quizId: string, accessCodeSet: boolean, settings: import("@/lib/types").SEBSettings, unlockAt: string, dueAt: string | null) => void;
 }
 
 interface Preset {
@@ -37,7 +40,6 @@ interface Preset {
 
 // Default overrides — these map to the SEB config toggles
 interface ConfigOverrides {
-    allowQuit: boolean;
     allowScreenSharing: boolean;
     allowVirtualMachine: boolean;
     allowSpellCheck: boolean;
@@ -45,34 +47,30 @@ interface ConfigOverrides {
 }
 
 // Which field triggered the current toast error
-type ToastField = "accessCode" | "allowedDomains" | "quitPassword" | null;
+type ToastField = "accessCode" | "allowedDomains" | "accessDate" | "dueDate" | null;
 
 
 // What each preset defaults to (so toggles reset when you switch presets)
 const PRESET_DEFAULTS: Record<string, ConfigOverrides> = {
     standard: {
-        allowQuit: false,
         allowScreenSharing: false,
         allowVirtualMachine: false,
         allowSpellCheck: false,
         urlFilterEnabled: true,
     },
     high: {
-        allowQuit: false,
         allowScreenSharing: false,
         allowVirtualMachine: false,
         allowSpellCheck: false,
         urlFilterEnabled: true,
     },
     openBook: {
-        allowQuit: false,
         allowScreenSharing: false,
         allowVirtualMachine: false,
         allowSpellCheck: true,
         urlFilterEnabled: false,
     },
     testingCenter: {
-        allowQuit: false,
         allowScreenSharing: false,
         allowVirtualMachine: false,
         allowSpellCheck: false,
@@ -148,6 +146,7 @@ export function SEBConfigDialog({
     // Presets from backend
     const [presets, setPresets] = useState<Preset[]>([]);
     const [presetsLoaded, setPresetsLoaded] = useState(false);
+    const [loadedQuizId, setLoadedQuizId] = useState<string | null>(null);
 
     // Form state
     const [selectedPreset, setSelectedPreset] = useState("standard");
@@ -155,8 +154,15 @@ export function SEBConfigDialog({
         PRESET_DEFAULTS.standard
     );
     const [allowedDomains, setAllowedDomains] = useState("");
-    const [quitPassword, setQuitPassword] = useState("");
-    const [accessCode, setConfigAccessCode] = useState("");  
+    const [accessCode, setConfigAccessCode] = useState("");
+    const [accessDate, setAccessDate] = useState<string | null>(null);  // ISO-8601 UTC
+    const [dueDate, setDueDate] = useState<string | null>(null);        // ISO-8601 UTC, optional
+
+    // Tracks whether the time field inside each picker has invalid input
+    // (e.g. "4:88 pm"). The picker shows a red border; these flags let the
+    // save handler block and show a toast.
+    const [accessTimeError, setAccessTimeError] = useState(false);
+    const [dueTimeError, setDueTimeError] = useState(false);
     const [isEditingAccessCode, setIsEditingAccessCode] = useState(false);
     const accessCodeInputRef = useRef<HTMLInputElement>(null);
 
@@ -191,6 +197,10 @@ export function SEBConfigDialog({
         };
     }, []);
 
+    // Reset loaded quiz ID when dialog is closed, so settings reload next time
+    useEffect(() => {
+    if (!open) setLoadedQuizId(null);
+}, [open]);
 
     // Fetch presets on first open
     useEffect(() => {
@@ -237,8 +247,45 @@ export function SEBConfigDialog({
             setToast(null);
             setSaving(false);
 
-            // If quiz has SEB configured, fetch saved settings from DB
-            if (quiz.sebConfigured || quiz.sebSettings) {
+            // Access date is sourced from Canvas (via the quiz object's unlockAt
+            // which the dashboard already populates). It is NOT stored in our DB.
+            setAccessDate(quiz.unlockAt || null);
+
+            // Due date is also sourced from Canvas; optional — users can leave it
+            // unset. Not stored in our DB; we write through to Canvas on save.
+            setDueDate(quiz.dueAt || null);
+
+            // Fast path: if the parent already has the saved SEB settings on
+            // the quiz object (which it does whenever this dialog is opened
+            // from the dashboard or the settings dialog), use them directly.
+            // No network round-trip, no spinner flash. The DB is only the
+            // source of truth between edits, and after each save the parent
+            // updates its local state — so a refetch here would never return
+            // anything different from what's already in props.
+            if (quiz.sebSettings) {
+                const s = quiz.sebSettings;
+                setSelectedPreset(s.securityLevel || "standard");
+                setOverrides({
+                    allowScreenSharing: s.allowScreenSharing ?? false,
+                    allowVirtualMachine: s.allowVirtualMachine ?? false,
+                    allowSpellCheck: s.allowSpellCheck ?? false,
+                    urlFilterEnabled: s.urlFilterEnabled ?? true,
+                });
+                setAllowedDomains(
+                    Array.isArray(s.allowedDomains) && s.allowedDomains.length > 0
+                        ? s.allowedDomains.join(", ")
+                        : canvasUrl ? new URL(canvasUrl).hostname : ""
+                );
+                setConfigAccessCode(s.accessCode || quiz.accessCode || generateRandomCode());
+                setLoadedQuizId(quiz.id);
+                return;
+            }
+
+            // Fallback: the quiz claims to be configured but somehow doesn't
+            // have settings on the prop (shouldn't happen in normal use, but
+            // possible if the dashboard's status fetch raced ahead of its
+            // settings fetch). Pull from the DB as a safety net.
+            if (quiz.sebConfigured) {
                 try {
                     const token = sessionStorage.getItem("seb_token");
                     const res = await fetch(
@@ -250,7 +297,6 @@ export function SEBConfigDialog({
                         const s = await res.json();
                         setSelectedPreset(s.securityLevel || "standard");
                         setOverrides({
-                            allowQuit: s.allowQuit ?? false,
                             allowScreenSharing: s.allowScreenSharing ?? false,
                             allowVirtualMachine: s.allowVirtualMachine ?? false,
                             allowSpellCheck: s.allowSpellCheck ?? false,
@@ -261,8 +307,9 @@ export function SEBConfigDialog({
                                 ? s.allowedDomains.join(", ")
                                 : canvasUrl ? new URL(canvasUrl).hostname : ""
                         );
-                        setQuitPassword(s.quitPassword || "");
                         setConfigAccessCode(s.accessCode || quiz.accessCode || generateRandomCode());
+                        setLoadedQuizId(quiz.id);
+
                         return;
                     }
                 } catch (err) {
@@ -274,8 +321,8 @@ export function SEBConfigDialog({
             setSelectedPreset("standard");
             setOverrides(PRESET_DEFAULTS.standard);
             setAllowedDomains(canvasUrl ? new URL(canvasUrl).hostname : "");
-            setQuitPassword("");
             setConfigAccessCode(quiz.accessCode || generateRandomCode());
+            setLoadedQuizId(quiz.id);
         };
 
         loadSettings();
@@ -304,7 +351,7 @@ export function SEBConfigDialog({
     }, [allowedDomains]);
 
     // Whether any conditional sub-sections are visible below the toggles
-    const hasVisibleSubFields = overrides.urlFilterEnabled || overrides.allowQuit;
+    const hasVisibleSubFields = overrides.urlFilterEnabled;
 
     // ── Save handler ─────────────────────────────────────────────────────────
     const handleSave = useCallback(async () => {
@@ -315,17 +362,50 @@ export function SEBConfigDialog({
             showToast("Access code must be at least 5 characters.", "accessCode");
             return;
         }
-        
+
         // Validate allowed domains when URL Filtering is enabled
         if (overrides.urlFilterEnabled && !hasAllowedDomains()) {
             showToast("At least one allowed domain is required when URL filtering is enabled.", "allowedDomains");
             return;
         }
 
-        // Validate quit password when Allow Quit is enabled
-        if (overrides.allowQuit && !quitPassword.trim()) {
-            showToast("Quit password cannot be blank.", "quitPassword");
+        // Block save if either time field has invalid input (e.g. "4:88 pm")
+        if (accessTimeError) {
+            showToast("Enter a valid time for the access date.", "accessDate");
             return;
+        }
+        if (dueTimeError) {
+            showToast("Enter a valid time for the due date.", "dueDate");
+            return;
+        }
+
+        // Validate access date — required, since it's the primary mechanism
+        // preventing students from taking the exam early
+        if (!accessDate) {
+            showToast("Access date is required.", "accessDate");
+            return;
+        }
+
+        // Defense in depth — the picker already blocks past dates, but in case
+        // the user's clock changed between picker selection and save, refuse
+        // anything in the past at the save handler too.
+        if (new Date(accessDate).getTime() <= Date.now()) {
+            showToast("Access date must be in the future.", "accessDate");
+            return;
+        }
+
+        // Validate due date — optional, so only check if set. Must be in the
+        // future (same rationale as access date) and must be on or after the
+        // access date (an exam that closes before it opens is nonsensical).
+        if (dueDate) {
+            if (new Date(dueDate).getTime() <= Date.now()) {
+                showToast("Due date must be in the future.", "dueDate");
+                return;
+            }
+            if (new Date(dueDate).getTime() < new Date(accessDate).getTime()) {
+                showToast("Due date must be on or after the access date.", "dueDate");
+                return;
+            }
         }
 
         setSaving(true);
@@ -344,8 +424,17 @@ export function SEBConfigDialog({
             const result = await setAccessCode(courseId, quiz.id, quiz.quizType, token, accessCode);
             const accessCodeValue = result.accessCode;
 
+            // Step 2: Set the access (unlock) date on Canvas
+            await setUnlockDate(courseId, quiz.id, quiz.quizType, token, accessDate);
 
-            // Step 2: Generate and save the SEB config on the backend
+            // Step 2b: Set (or clear) the due date on Canvas. Only fire if the
+            // value changed — avoids an unnecessary round-trip when due date
+            // wasn't touched.
+            if ((dueDate || null) !== (quiz.dueAt || null)) {
+                await apiSetDueDate(courseId, quiz.id, quiz.quizType, token, dueDate);
+            }
+
+            // Step 3: Generate and save the SEB config on the backend
             //   (backend also updates the Canvas quiz's title + instructions
             //    with the per-student launch link)
             const canvasQuizURL = `${canvasUrl}/courses/${courseId}/quizzes/${quiz.id}/take`;
@@ -366,11 +455,10 @@ export function SEBConfigDialog({
                     canvasQuizURL,
                     preset: selectedPreset,
                     allowedDomains: domains,
-                    quitPassword: quitPassword || null,
                     overrides,
                     accessCode: accessCodeValue,
                     quizTitle: quiz.title,
-                    quizType: quiz.quizType,    
+                    quizType: quiz.quizType,
                 }),
             });
 
@@ -386,7 +474,6 @@ export function SEBConfigDialog({
             // Done — build the settings object for the parent to store
             const savedSettings = {
                 securityLevel: selectedPreset as "standard" | "high" | "openBook" | "testingCenter",
-                allowQuit: overrides.allowQuit,
                 allowScreenSharing: overrides.allowScreenSharing,
                 allowVirtualMachine: overrides.allowVirtualMachine,
                 allowSpellCheck: overrides.allowSpellCheck,
@@ -394,11 +481,10 @@ export function SEBConfigDialog({
                 urlFilterEnabled: overrides.urlFilterEnabled,
                 allowedDomains: domains,
                 accessCode: accessCodeValue,
-                quitPassword: quitPassword || undefined,
                 configuredAt: new Date().toISOString(),
             };
 
-            onSaved(quiz.id, true, savedSettings);
+            onSaved(quiz.id, true, savedSettings, accessDate, dueDate);
             onClose();
         } catch (err) {
             console.error("SEB config save error:", err);
@@ -406,10 +492,11 @@ export function SEBConfigDialog({
         } finally {
             setSaving(false);
         }
-    }, [quiz, courseId, canvasUrl, selectedPreset, overrides, allowedDomains, quitPassword, accessCode, hasAllowedDomains, onSaved, onClose]);
+    }, [quiz, courseId, canvasUrl, selectedPreset, overrides, allowedDomains, accessCode, accessDate, dueDate, accessTimeError, dueTimeError, hasAllowedDomains, onSaved, onClose, showToast]);
 
     // ── Render ───────────────────────────────────────────────────────────────
     if (!open || !quiz) return null;
+    const isLoadingSettings = loadedQuizId !== quiz.id;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -465,229 +552,252 @@ export function SEBConfigDialog({
                         </div>
                     )}
 
-                    {/* Security Preset */}
-                    <div>
-                        <p id="security-preset-label" className="text-sm font-medium text-foreground">
-                            Security Preset
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                            Choose a baseline, then customize individual settings below.
-                        </p>
-                        <div role="group" aria-labelledby="security-preset-label" className="grid grid-cols-2 gap-2">
-                            {presets.map((preset) => (
-                                <button
-                                    key={preset.id}
-                                    onClick={() => handlePresetChange(preset.id)}
-                                    className={cn(
-                                        "text-left px-3 py-2.5 rounded-lg border transition-all duration-150",
-                                        selectedPreset === preset.id
-                                            ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                                            : "border-border hover:border-primary/30 hover:bg-muted/50"
-                                    )}
-                                >
-                                    <p
+                    {isLoadingSettings ? (
+                        <div className="flex items-center justify-center py-16">
+                            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                        </div>
+                    ) : (
+                        <>
+                            {/* Security Preset */}
+                            <div>
+                                <p id="security-preset-label" className="text-sm font-medium text-foreground">
+                                    Security Preset
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                                    Choose a baseline, then customize individual settings below.
+                                </p>
+                                <div role="group" aria-labelledby="security-preset-label" className="grid grid-cols-2 gap-2">
+                                    {presets.map((preset) => (
+                                        <button
+                                            key={preset.id}
+                                            onClick={() => handlePresetChange(preset.id)}
+                                            className={cn(
+                                                "text-left px-3 py-2.5 rounded-lg border transition-all duration-150",
+                                                selectedPreset === preset.id
+                                                    ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                                                    : "border-border hover:border-primary/30 hover:bg-muted/50"
+                                            )}
+                                        >
+                                            <p
+                                                className={cn(
+                                                    "text-sm font-medium",
+                                                    selectedPreset === preset.id
+                                                        ? "text-primary"
+                                                        : "text-foreground"
+                                                )}
+                                            >
+                                                {preset.name}
+                                            </p>
+                                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                                                {preset.description}
+                                            </p>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Divider */}
+                            <div className="h-px bg-border" />
+
+                            {/* Settings Toggles */}
+                            <div>
+                                <label className="text-sm font-medium text-foreground">
+                                    Security Settings
+                                </label>
+                                <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                                    Fine-tune what students can and cannot do during the exam.
+                                </p>
+                                <div className="space-y-0.5">
+                                    <ToggleRow
+                                        icon={Monitor}
+                                        label="Allow Screen Sharing"
+                                        description="Let students share their screen with other apps"
+                                        checked={overrides.allowScreenSharing}
+                                        onChange={(v) => setOverride("allowScreenSharing", v)}
+                                    />
+                                    <ToggleRow
+                                        icon={Monitor}
+                                        label="Allow Virtual Machine"
+                                        description="Allow SEB to run inside a VM (VMware, VirtualBox)"
+                                        checked={overrides.allowVirtualMachine}
+                                        onChange={(v) => setOverride("allowVirtualMachine", v)}
+                                    />
+                                    <ToggleRow
+                                        icon={Keyboard}
+                                        label="Allow Spell Check"
+                                        description="Enable the browser's built-in spell checker"
+                                        checked={overrides.allowSpellCheck}
+                                        onChange={(v) => setOverride("allowSpellCheck", v)}
+                                    />
+                                    <ToggleRow
+                                        icon={Globe}
+                                        label="URL Filtering"
+                                        description="Restrict navigation to allowed domains only"
+                                        checked={overrides.urlFilterEnabled}
+                                        onChange={(v) => setOverride("urlFilterEnabled", v)}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Thin divider — only shown when sub-fields are visible */}
+                            {hasVisibleSubFields && <div className="h-px bg-border" />}
+
+                            {/* Allowed Domains — only shown when URL Filtering is enabled */}
+                            {overrides.urlFilterEnabled && (
+                                <div>
+                                    <label className="text-sm font-medium text-foreground">
+                                        Allowed Domains
+                                    </label>
+                                    <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                                        Domains students can navigate to (comma or newline separated).
+                                    </p>
+                                    <textarea
+                                        value={allowedDomains}
+                                        onChange={(e) => {
+                                            setAllowedDomains(e.target.value);
+                                            if (toast) clearToast();
+                                        }}
+                                        onBlur={() => {
+                                            if (!hasAllowedDomains()) {
+                                                showToast("At least one allowed domain is required when URL filtering is enabled.", "allowedDomains");
+                                            }
+                                        }}
+                                        rows={2}
+                                        placeholder="canvas.ufl.edu, *.instructure.com"
                                         className={cn(
-                                            "text-sm font-medium",
-                                            selectedPreset === preset.id
-                                                ? "text-primary"
-                                                : "text-foreground"
+                                            "w-full px-3 py-2 rounded-md border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none transition-shadow",
+                                            toastField === "allowedDomains" && "border-destructive focus:ring-destructive/30"
                                         )}
-                                    >
-                                        {preset.name}
-                                    </p>
-                                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                                        {preset.description}
-                                    </p>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Divider */}
-                    <div className="h-px bg-border" />
-
-                    {/* Settings Toggles */}
-                    <div>
-                        <label className="text-sm font-medium text-foreground">
-                            Security Settings
-                        </label>
-                        <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                            Fine-tune what students can and cannot do during the exam.
-                        </p>
-                        <div className="space-y-0.5">
-                            <ToggleRow
-                                icon={Monitor}
-                                label="Allow Screen Sharing"
-                                description="Let students share their screen with other apps"
-                                checked={overrides.allowScreenSharing}
-                                onChange={(v) => setOverride("allowScreenSharing", v)}
-                            />
-                            <ToggleRow
-                                icon={Monitor}
-                                label="Allow Virtual Machine"
-                                description="Allow SEB to run inside a VM (VMware, VirtualBox)"
-                                checked={overrides.allowVirtualMachine}
-                                onChange={(v) => setOverride("allowVirtualMachine", v)}
-                            />
-                            <ToggleRow
-                                icon={Keyboard}
-                                label="Allow Spell Check"
-                                description="Enable the browser's built-in spell checker"
-                                checked={overrides.allowSpellCheck}
-                                onChange={(v) => setOverride("allowSpellCheck", v)}
-                            />
-                            <ToggleRow
-                                icon={Globe}
-                                label="URL Filtering"
-                                description="Restrict navigation to allowed domains only"
-                                checked={overrides.urlFilterEnabled}
-                                onChange={(v) => setOverride("urlFilterEnabled", v)}
-                            />
-                            <ToggleRow
-                                icon={X}
-                                label="Allow Quit"
-                                description="Let students quit SEB with a password"
-                                checked={overrides.allowQuit}
-                                onChange={(v) => setOverride("allowQuit", v)}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Thin divider — only shown when sub-fields are visible */}
-                    {hasVisibleSubFields && <div className="h-px bg-border" />}
-
-                    {/* Allowed Domains — only shown when URL Filtering is enabled */}
-                    {overrides.urlFilterEnabled && (
-                        <div>
-                            <label className="text-sm font-medium text-foreground">
-                                Allowed Domains
-                            </label>
-                            <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                                Domains students can navigate to (comma or newline separated).
-                            </p>
-                            <textarea
-                                value={allowedDomains}
-                                onChange={(e) => {
-                                    setAllowedDomains(e.target.value);
-                                    if (toast) clearToast();
-                                }}
-                                onBlur={() => {
-                                    if (!hasAllowedDomains()) {
-                                        showToast("At least one allowed domain is required when URL filtering is enabled.", "allowedDomains");
-                                    }
-                                }}
-                                rows={2}
-                                placeholder="canvas.ufl.edu, *.instructure.com"
-                                className={cn(
-                                    "w-full px-3 py-2 rounded-md border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none transition-shadow",
-                                    toastField === "allowedDomains" && "border-destructive focus:ring-destructive/30"
-                                )}
-                            />
-                        </div>
-                    )}
-
-                    {/* Quit Password — only shown when Allow Quit is enabled */}
-                    {overrides.allowQuit && (
-                        <div>
-                            <label className="text-sm font-medium text-foreground">
-                                Quit Password
-                            </label>
-                            <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                                Students must enter this password to exit SEB during the exam.
-                            </p>
-                            <input
-                                type="text"
-                                value={quitPassword}
-                                onChange={(e) => {
-                                    setQuitPassword(e.target.value);
-                                    if (toast) clearToast();
-                                }}
-                                onBlur={() => {
-                                    if (!quitPassword.trim()) {
-                                        showToast("Quit password cannot be blank.", "quitPassword");
-                                    }
-                                }}
-                                placeholder="Enter a quit password"
-                                className={cn(
-                                    "w-full h-9 px-3 rounded-md border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow",
-                                    toastField === "quitPassword" && "border-destructive focus:ring-destructive/30"
-                                )}
-                            />
-                        </div>
-                    )}
-
-                    {/* Access Code */}
-                    <div className="h-px bg-border" />
-                    <div>
-                        <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-2">
-                            Access Code
-                        </p>
-
-                        <p className="text-xs text-muted-foreground mb-2">
-                            This code is set on Canvas and delivered automatically when SEB
-                            validates with our server. Students never see it directly.
-                        </p>
-
-                        <div className="flex items-center gap-2">
-                            {isEditingAccessCode ? (
-                                <input
-                                    ref={accessCodeInputRef}
-                                    type="text"
-                                    value={accessCode}
-                                    onChange={(e) => {
-                                        setConfigAccessCode(e.target.value);     // clear error as they type
-                                        if (toast) clearToast(); 
-                                    }}
-
-                                    onBlur={() => {
-                                        setIsEditingAccessCode(false);
-                                        if (accessCode.trim().length < 5) {
-                                            showToast("Access code must be at least 5 characters.", "accessCode");
-                                        }
-                                    }}
-                                    className={cn(
-                                        "flex-1 px-3 py-2 rounded-md border bg-background font-mono text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow",
-                                        toastField === "accessCode" && "border-destructive focus:ring-destructive/30"
-                                    )}
-                                />
-                            ) : (
-                                <code className={cn(
-                                    "flex-1 bg-secondary text-foreground px-3 py-2 rounded-md font-mono text-sm min-h-9",
-                                    toastField === "accessCode" && "ring-1 ring-destructive border border-destructive"
-                                )}>
-                                    {accessCode}
-                                </code>
+                                    />
+                                </div>
                             )}
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                className="shrink-0"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => {
-                                    if (!isEditingAccessCode) {
-                                        setIsEditingAccessCode(true);
-                                        setTimeout(() => {
-                                            accessCodeInputRef.current?.focus();
-                                            accessCodeInputRef.current?.select();
-                                        }, 0);
-                                    } else {
-                                        setIsEditingAccessCode(false);
-                                        if (accessCode.trim().length < 5) {
-                                            showToast("Access code must be at least 5 characters.", "accessCode");
-                                        }
-                                    }
-                                }}
-                                title={isEditingAccessCode ? "Done editing" : "Edit access code"}
-                            >
-                                <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                        </div>
-                    </div>
+
+                            {/* Access Date */}
+                            <div className="h-px bg-border" />
+                            <div>
+                                <div className="flex items-center gap-1.5 mb-2">
+                                    <CalendarClock className="w-3.5 h-3.5 text-muted-foreground" />
+                                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
+                                        Access Date
+                                    </p>
+                                </div>
+
+                                <AccessDateTimePicker
+                                    value={accessDate}
+                                    onChange={(v) => {
+                                        setAccessDate(v);
+                                        if (toast) clearToast();
+                                    }}
+                                    onTimeError={setAccessTimeError}
+                                    error={toastField === "accessDate"}
+                                    disabled={saving}
+                                />
+
+                                <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+                                    The earliest date and time students can start the exam.
+                                </p>
+                            </div>
+
+                            {/* Due Date */}
+                            <div className="h-px bg-border" />
+                            <div>
+                                <div className="flex items-center gap-1.5 mb-2">
+                                    <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+                                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
+                                        Due Date <span className="normal-case text-muted-foreground/70">(optional)</span>
+                                    </p>
+                                </div>
+
+                                <AccessDateTimePicker
+                                    value={dueDate}
+                                    onChange={(v) => {
+                                        setDueDate(v);
+                                        if (toast) clearToast();
+                                    }}
+                                    onTimeError={setDueTimeError}
+                                    error={toastField === "dueDate"}
+                                    disabled={saving}
+                                />
+
+                                <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+                                    When the exam closes. Must be on or after the access date.
+                                </p>
+                            </div>
+
+                            {/* Access Code */}
+                            <div className="h-px bg-border" />
+                            <div>
+                                <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-2">
+                                    Access Code
+                                </p>
+
+                                <p className="text-xs text-muted-foreground mb-2">
+                                    This code is set on Canvas and delivered automatically when SEB
+                                    validates with our server. Students never see it directly.
+                                </p>
+
+                                <div className="flex items-center gap-2">
+                                    {isEditingAccessCode ? (
+                                        <input
+                                            ref={accessCodeInputRef}
+                                            type="text"
+                                            value={accessCode}
+                                            onChange={(e) => {
+                                                setConfigAccessCode(e.target.value);     // clear error as they type
+                                                if (toast) clearToast();
+                                            }}
+
+                                            onBlur={() => {
+                                                setIsEditingAccessCode(false);
+                                                if (accessCode.trim().length < 5) {
+                                                    showToast("Access code must be at least 5 characters.", "accessCode");
+                                                }
+                                            }}
+                                            className={cn(
+                                                "flex-1 px-3 py-2 rounded-md border bg-background font-mono text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow",
+                                                toastField === "accessCode" && "border-destructive focus:ring-destructive/30"
+                                            )}
+                                        />
+                                    ) : (
+                                        <code className={cn(
+                                            "flex-1 bg-secondary text-foreground px-3 py-2 rounded-md font-mono text-sm min-h-9",
+                                            toastField === "accessCode" && "ring-1 ring-destructive border border-destructive"
+                                        )}>
+                                            {accessCode}
+                                        </code>
+                                    )}
+                                    <Button
+                                        variant="outline"
+                                        size="icon"
+                                        className="shrink-0"
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={() => {
+                                            if (!isEditingAccessCode) {
+                                                setIsEditingAccessCode(true);
+                                                setTimeout(() => {
+                                                    accessCodeInputRef.current?.focus();
+                                                    accessCodeInputRef.current?.select();
+                                                }, 0);
+                                            } else {
+                                                setIsEditingAccessCode(false);
+                                                if (accessCode.trim().length < 5) {
+                                                    showToast("Access code must be at least 5 characters.", "accessCode");
+                                                }
+                                            }
+                                        }}
+                                        title={isEditingAccessCode ? "Done editing" : "Edit access code"}
+                                    >
+                                        <Pencil className="w-3.5 h-3.5" />
+                                    </Button>
+                                </div>
+                            </div>
+                        </>
+                    )}
                 </div>
 
                 {/* Footer */}
                 <div className="flex items-center justify-end gap-2 px-5 py-3 border-t bg-muted/30">
-                    <Button variant="ghost" size="sm" onClick={onClose} disabled={saving} className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                    <Button variant="ghost" size="sm" onClick={onClose} disabled={saving || isLoadingSettings} className="text-destructive hover:text-destructive hover:bg-destructive/10">
                         Cancel
                     </Button>
                     <SEBChangesInfo
@@ -695,13 +805,15 @@ export function SEBConfigDialog({
                         accessCode={accessCode}
                         overrides={overrides}
                         allowedDomains={allowedDomains}
-                        disabled={saving}
+                        accessDate={accessDate}
+                        dueDate={dueDate}
+                        disabled={saving || isLoadingSettings}
                     />
                     <Button
                         variant="default"
                         size="sm"
                         onClick={handleSave}
-                        disabled={saving}
+                        disabled={saving || isLoadingSettings}
                         className="gap-1.5"
                     >
                         {saving ? (

@@ -10,7 +10,11 @@ export interface LTIContext {
 }
 
 // sort keys used on the dashboard quiz list
-export type SortKey = "title" | "dueAt" | "sebConfigured";
+//
+// Note: "unlockAt" replaces the previous "dueAt" key. Instructors care about
+// when students can START the exam, not when it's due — and the unlock date
+// doubles as the access-control mechanism for SEB-protected exams.
+export type SortKey = "title" | "unlockAt" | "sebConfigured";
 
 // to store both types of quizzes
 export interface Quiz {
@@ -21,9 +25,11 @@ export interface Quiz {
   // core display fields
   title: string;
   description: string | null;
-  dueAt: string | null;
+  // dueAt is intentionally removed — see SortKey note above. The dashboard
+  // now surfaces unlockAt (Canvas "Available from") as the primary date.
   lockAt: string | null;
   unlockAt: string | null;
+  dueAt: string | null;     // only used for SEB settings dialog, which shows both unlock and due dates
   published: boolean;
   pointsPossible: number | null;
   questionCount: number;
@@ -97,7 +103,6 @@ export interface CanvasNewQuiz {
 // SEB configuration settings
 export interface SEBSettings {
   securityLevel: "standard" | "high" | "openBook" | "testingCenter";
-  allowQuit: boolean;
   allowScreenSharing: boolean;
   allowVirtualMachine: boolean;
   allowSpellCheck: boolean;
@@ -105,6 +110,5 @@ export interface SEBSettings {
   urlFilterEnabled: boolean;
   allowedDomains: string[];
   accessCode?: string;
-  quitPassword?: string;
   configuredAt: string;
 }

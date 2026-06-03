@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CalendarClock,
   Calendar,
   FileQuestion,
   Award,
@@ -22,31 +23,44 @@ interface QuizCardProps {
   onViewSettings: (quiz: Quiz) => void;
 }
 
-function formatDate(iso: string | null): string {
-  if (!iso) return "No due date";
+// Format a date for display on the quiz card. Drops the year when it matches
+// the current year (so "Apr 28, 2026 2:00 AM" shows as "Apr 28, 2:00 AM" if
+// we're currently in 2026, but stays as "Apr 28, 2025, 2:00 AM" if showing a
+// past-year exam). Year is preserved in the SEB settings/config dialogs —
+// this short form is only for the dashboard card.
+function formatCardDate(iso: string | null): string {
+  if (!iso) return "";
   const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+
+  const sameYear = d.getFullYear() === new Date().getFullYear();
   return d.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
-    year: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
     hour: "numeric",
     minute: "2-digit",
   });
 }
 
-function getDueStatus(iso: string | null): "overdue" | "soon" | "upcoming" | "none" {
+// Access (unlock) date status — semantics differ from a due date:
+//   "open"     = unlock date is in the past, exam is currently accessible
+//   "soon"     = unlock date is within the next 3 days
+//   "upcoming" = unlock date is more than 3 days out
+//   "none"     = no unlock date set on the quiz
+function getAccessStatus(iso: string | null): "open" | "soon" | "upcoming" | "none" {
   if (!iso) return "none";
   const now = new Date();
-  const due = new Date(iso);
-  const diff = due.getTime() - now.getTime();
+  const unlock = new Date(iso);
+  const diff = unlock.getTime() - now.getTime();
   const days = diff / (1000 * 60 * 60 * 24);
-  if (diff < 0) return "overdue";
+  if (diff <= 0) return "open";
   if (days <= 3) return "soon";
   return "upcoming";
 }
 
 export function QuizCard({ quiz, onConfigure, onViewSettings }: QuizCardProps) {
-  const dueStatus = getDueStatus(quiz.dueAt);
+  const accessStatus = getAccessStatus(quiz.unlockAt);
 
   // Fully secured = SEB config generated AND settings in db
   const fullSecured = quiz.sebConfigured && !!quiz.sebSettings;
@@ -59,7 +73,7 @@ export function QuizCard({ quiz, onConfigure, onViewSettings }: QuizCardProps) {
               !quiz.published && "opacity-75"
           )}
       >
-        {/* Left border accent: green = fully secured, amber = partial, gray = nothing */}
+        {/* Left border accent: green = fully secured, gray = nothing */}
         <div
             className={cn(
                 "absolute left-0 top-3 bottom-3 w-[3px] rounded-full transition-colors",
@@ -76,27 +90,42 @@ export function QuizCard({ quiz, onConfigure, onViewSettings }: QuizCardProps) {
 
             {/* Meta row */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5" />
-              <span
-                  className={cn(
-                      dueStatus === "overdue" && "text-destructive font-medium",
-                      dueStatus === "soon" && "text-amber-600 font-medium"
-                  )}
-              >
-                {formatDate(quiz.dueAt)}
+              {/* Access (unlock) date */}
+              <span className="inline-flex items-center gap-1.5">
+                <CalendarClock className="w-3.5 h-3.5" />
+                <span
+                    className={cn(
+                        // Emerald when the exam is currently open to students
+                        accessStatus === "open" && "text-emerald-600 font-medium",
+                        // Amber when the unlock date is within 3 days
+                        accessStatus === "soon" && "text-amber-600 font-medium"
+                    )}
+                >
+                  {accessStatus === "none"
+                      ? "No access date"
+                      : accessStatus === "open"
+                          ? `Open since ${formatCardDate(quiz.unlockAt)}`
+                          : `Opens ${formatCardDate(quiz.unlockAt)}`}
+                </span>
               </span>
-            </span>
+
+              {/* Due date */}
+              <span className="inline-flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>
+                  {quiz.dueAt ? `Due ${formatCardDate(quiz.dueAt)}` : "No due date"}
+                </span>
+              </span>
 
               <span className="inline-flex items-center gap-1.5">
-              <Award className="w-3.5 h-3.5" />
+                <Award className="w-3.5 h-3.5" />
                 {quiz.pointsPossible ?? 0} {quiz.pointsPossible === 1 ? "pt" : "pts"}
-            </span>
+              </span>
 
               <span className="inline-flex items-center gap-1.5">
-              <FileQuestion className="w-3.5 h-3.5" />
+                <FileQuestion className="w-3.5 h-3.5" />
                 {quiz.questionCount} {quiz.questionCount === 1 ? "question" : "questions"}
-            </span>
+              </span>
             </div>
           </div>
 

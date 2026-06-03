@@ -74,13 +74,21 @@ export default function DashboardPage() {
   }, []);
 
   // Called after the config dialog saves successfully
-  const handleConfigSaved = useCallback((quizId: string, accessCodeSet: boolean, settings: import("@/lib/types").SEBSettings) => {
+  const handleConfigSaved = useCallback((
+      quizId: string,
+      accessCodeSet: boolean,
+      settings: import("@/lib/types").SEBSettings,
+      unlockAt: string,
+      dueAt: string | null,
+  ) => {
     setQuizzes((prev) =>
         prev.map((q) =>
             q.id === quizId
                 ? {
                   ...q,
                   hasAccessCode: accessCodeSet ? true : q.hasAccessCode,
+                  unlockAt,
+                  dueAt,
                   sebConfigured: true,
                   sebConfiguredDate: new Date().toISOString(),
                   sebSettings: settings,

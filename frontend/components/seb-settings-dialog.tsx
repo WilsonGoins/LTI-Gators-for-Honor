@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import { X, ShieldCheck, Monitor, Globe, Lock, Wifi, Copy, Pencil, Check } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { X, ShieldCheck, Monitor, Globe, Wifi, Pencil, Calendar, CalendarClock } from "lucide-react";
 import { Quiz } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,19 @@ const SECURITY_LABELS: Record<string, { label: string; color: string }> = {
   openBook: { label: "Open Book", color: "text-emerald-600 bg-emerald-50 border-emerald-200" },
   testingCenter: { label: "Testing Center", color: "text-violet-600 bg-violet-50 border-violet-200" },
 };
+
+function formatAccessDate(iso: string | null): string {
+  if (!iso) return "Not set";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "Not set";
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 function SettingRow({
                       icon: Icon,
@@ -59,21 +72,6 @@ function SettingRow({
 export function SEBSettingsDialog({ quiz, open, courseId, onClose, onEdit }: SEBSettingsDialogProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const showToast = useCallback((message: string) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast(message);
-    toastTimerRef.current = setTimeout(() => setToast(null), 3000);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    };
-  }, []);
-
   // Close on escape
   useEffect(() => {
     if (!open) return;
@@ -101,16 +99,6 @@ export function SEBSettingsDialog({ quiz, open, courseId, onClose, onEdit }: SEB
           className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
           style={{ animationDuration: "0.15s" }}
       >
-        {/* Toast notification */}
-        {toast && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-top-2 fade-in duration-200">
-              <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600 text-white shadow-lg text-sm font-medium">
-                <Check className="w-4 h-4 shrink-0" />
-                {toast}
-              </div>
-            </div>
-        )}
-
         <div
             className="bg-card rounded-xl shadow-xl border w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col animate-fade-in"
             style={{ animationDuration: "0.2s" }}
@@ -151,17 +139,46 @@ export function SEBSettingsDialog({ quiz, open, courseId, onClose, onEdit }: SEB
               </div>
             </div>
 
+            {/* Access date */}
+            <div className="flex items-center gap-3">
+              <CalendarClock className="w-5 h-5 text-primary" />
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
+                  Access Date
+                </p>
+                <p className="text-sm font-medium text-foreground mt-1">
+                  {formatAccessDate(quiz.unlockAt)}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Earliest time students can start the exam.
+                </p>
+              </div>
+            </div>
+
+            {/* Due date — only shown when set on the quiz */}
+            {quiz.dueAt && (
+                <div className="flex items-center gap-3">
+                  <Calendar className="w-5 h-5 text-primary" />
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
+                      Due Date
+                    </p>
+                    <p className="text-sm font-medium text-foreground mt-1">
+                      {formatAccessDate(quiz.dueAt)}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      When the exam closes.
+                    </p>
+                  </div>
+                </div>
+            )}
+
             {/* Settings grid */}
             <div className="space-y-0 divide-y divide-border">
               <SettingRow
                   icon={Monitor}
                   label="Fullscreen Mode"
                   enabled={settings.browserViewMode === 1}
-              />
-              <SettingRow
-                  icon={Lock}
-                  label="Allow Quit"
-                  enabled={settings.allowQuit}
               />
               <SettingRow
                   icon={Monitor}
@@ -200,31 +217,6 @@ export function SEBSettingsDialog({ quiz, open, courseId, onClose, onEdit }: SEB
                           {domain}
                         </code>
                     ))}
-                  </div>
-                </div>
-            )}
-
-            {/* Quit password */}
-            {settings.quitPassword && (
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-2">
-                    Quit Password
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 bg-secondary text-foreground px-3 py-2 rounded-md font-mono text-sm">
-                      {settings.quitPassword}
-                    </code>
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        className="shrink-0"
-                        onClick={() => {
-                            navigator.clipboard.writeText(String(settings.quitPassword ?? ""));
-                            showToast("Copied!");
-                        }}
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </Button>
                   </div>
                 </div>
             )}

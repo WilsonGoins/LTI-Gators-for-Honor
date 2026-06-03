@@ -1,20 +1,26 @@
 import { Quiz } from "./types";
 
+// Dummy quizzes for local development. Dates are spread across all the
+// dashboard card states (past due, currently open, opens soon, opens later,
+// missing dates) so the UI can be exercised without hitting Canvas.
+//
+// Today's date when last refreshed: April 24, 2026.
 export const DUMMY_QUIZZES: Quiz[] = [
+  // ─── Past due — exam window has closed ─────────────────────────────────
   {
     id: "q-1001",
     courseId: "c-101",
     title: "Midterm Exam",
     description: "Covers chapters 1-8. Safe Exam Browser required.",
-    dueAt: "2027-03-15T23:59:00Z",
-    lockAt: "2027-03-16T00:00:00Z",
-    unlockAt: "2027-03-15T08:00:00Z",
+    dueAt: "2026-04-17T23:59:00Z",
+    lockAt: "2026-04-18T00:00:00Z",
+    unlockAt: "2026-04-10T08:00:00Z",
     published: true,
     pointsPossible: 100,
     questionCount: 50,
     timeLimitSeconds: 5400,
     hasAccessCode: true,
-    accessCode: "MIDTERM-2027",
+    accessCode: "MIDTERM-2026",
     allowedAttempts: 1,
     shuffleQuestions: true,
     shuffleAnswers: true,
@@ -23,28 +29,29 @@ export const DUMMY_QUIZZES: Quiz[] = [
     quizType: "new",
     assignmentGroupId: "ag-1",
     sebConfigured: true,
-    sebConfiguredDate: "2027-02-20T14:30:00Z",
+    sebConfiguredDate: "2026-04-08T14:30:00Z",
     sebSettings: {
       securityLevel: "high",
-      allowQuit: false,
       allowScreenSharing: false,
       allowVirtualMachine: false,
       allowSpellCheck: false,
       browserViewMode: 1,
       urlFilterEnabled: true,
       allowedDomains: ["canvas.ufl.edu", "*.instructure.com"],
-      accessCode: "SEB-MID-2027",
-      configuredAt: "2027-02-20T14:30:00Z",
+      accessCode: "SEB-MID-2026",
+      configuredAt: "2026-04-08T14:30:00Z",
     },
   },
+
+  // ─── Currently open — exam is live, students can access ────────────────
   {
     id: "q-1002",
     courseId: "c-101",
     title: "Chapter 5 Quiz",
     description: "Short quiz on key concepts from chapter 5.",
-    dueAt: "2026-03-01T23:59:00Z",
-    lockAt: "2026-03-02T00:00:00Z",
-    unlockAt: "2026-03-01T00:00:00Z",
+    dueAt: "2026-05-06T23:59:00Z",
+    lockAt: "2026-05-07T00:00:00Z",
+    unlockAt: "2026-04-22T00:00:00Z",
     published: true,
     pointsPossible: 25,
     questionCount: 15,
@@ -61,14 +68,16 @@ export const DUMMY_QUIZZES: Quiz[] = [
     sebConfiguredDate: null,
     sebSettings: null,
   },
+
+  // ─── Upcoming (more than 3 days out) — neutral styling ─────────────────
   {
     id: "q-1003",
     courseId: "c-101",
     title: "Final Exam",
     description: "Comprehensive final covering all course material.",
-    dueAt: "2026-04-20T23:59:00Z",
-    lockAt: "2026-04-21T00:00:00Z",
-    unlockAt: "2026-04-20T08:00:00Z",
+    dueAt: "2026-05-15T23:59:00Z",
+    lockAt: "2026-05-16T00:00:00Z",
+    unlockAt: "2026-05-08T08:00:00Z",
     published: false,
     pointsPossible: 200,
     questionCount: 80,
@@ -85,14 +94,16 @@ export const DUMMY_QUIZZES: Quiz[] = [
     sebConfiguredDate: null,
     sebSettings: null,
   },
+
+  // ─── Opens soon (within 3 days) — amber "heads up" styling ─────────────
   {
     id: "q-1004",
     courseId: "c-101",
     title: "Lab Practical #2",
     description: "Hands-on lab assessment. Open notes permitted.",
-    dueAt: "2026-03-10T17:00:00Z",
-    lockAt: "2026-03-10T18:00:00Z",
-    unlockAt: "2026-03-10T13:00:00Z",
+    dueAt: "2026-04-26T17:00:00Z",
+    lockAt: "2026-04-26T18:00:00Z",
+    unlockAt: "2026-04-26T13:00:00Z",
     published: true,
     pointsPossible: 50,
     questionCount: 30,
@@ -107,10 +118,9 @@ export const DUMMY_QUIZZES: Quiz[] = [
     quizType: "classic",
     assignmentGroupId: "ag-3",
     sebConfigured: true,
-    sebConfiguredDate: "2026-02-18T09:15:00Z",
+    sebConfiguredDate: "2026-04-15T09:15:00Z",
     sebSettings: {
       securityLevel: "standard",
-      allowQuit: false,
       allowScreenSharing: false,
       allowVirtualMachine: false,
       allowSpellCheck: true,
@@ -118,15 +128,17 @@ export const DUMMY_QUIZZES: Quiz[] = [
       urlFilterEnabled: true,
       allowedDomains: ["canvas.ufl.edu", "*.instructure.com"],
       accessCode: "SEB-LAB-2026",
-      configuredAt: "2026-02-18T09:15:00Z",
+      configuredAt: "2026-04-15T09:15:00Z",
     },
   },
+
+  // ─── No access date but has a due date ─────────────────────────────────
   {
     id: "q-1005",
     courseId: "c-101",
     title: "Reading Comprehension Quiz",
     description: null,
-    dueAt: "2026-02-28T23:59:00Z",
+    dueAt: "2026-05-01T23:59:00Z",
     lockAt: null,
     unlockAt: null,
     published: true,
@@ -146,6 +158,8 @@ export const DUMMY_QUIZZES: Quiz[] = [
     sebConfiguredDate: null,
     sebSettings: null,
   },
+
+  // ─── No dates at all ───────────────────────────────────────────────────
   {
     id: "q-1006",
     courseId: "c-101",

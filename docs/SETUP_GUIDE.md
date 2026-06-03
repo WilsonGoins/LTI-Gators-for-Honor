@@ -285,7 +285,7 @@ Both are available on the Neon dashboard under "Connection Details." Toggle the 
 
 ### 2.4 Initialize the Database Schema
 
-The schema file creates three tables (`quizzes`, `seb_settings`, `seb_config_files`) and their triggers.
+The schema file creates five tables: `quizzes`, `seb_config_files`, and `seb_settings` (the core quiz and SEB configuration tables), plus `users` and `launch_sessions` (which back the per-student OAuth launch flow). The application sets `updated_at` on writes, so there are no database triggers.
 
 **Option A — Neon SQL Editor (easiest):**
 1. In the Neon dashboard, click **SQL Editor** in the left sidebar
@@ -302,7 +302,7 @@ Verify it worked by running this in the SQL Editor:
 SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
 ```
 
-You should see three rows: `quizzes`, `seb_config_files`, `seb_settings`.
+You should see five rows: `quizzes`, `seb_config_files`, `seb_settings`, `users`, and `launch_sessions`.
 
 ### 2.5 Configure Environment
 
@@ -315,16 +315,20 @@ cp .env.example .env
 ```
 
 ```
-LTI_PLATFORM_URL=https://canvas.instructure.com
-LTI_CLIENT_ID=<leave blank for now — fill in after registering in Canvas>
+LTI_CLIENT_ID=<leave blank for now — fill in after creating the LTI key in Canvas>
+CANVAS_OAUTH_CLIENT_ID=<leave blank for now — fill in after creating the OAuth API key>
+CANVAS_OAUTH_CLIENT_SECRET=<leave blank for now — fill in after creating the OAuth API key>
 CANVAS_URL=http://localhost:3000
 TOOL_URL=http://localhost:3001
 TOOL_PORT=3001
 CANVAS_API_URL=http://localhost:3000/api/v1
-CANVAS_ACCESS_TOKEN=<leave blank — reserved for future server-side API calls>
-SEB_DEFAULT_QUIT_PASSWORD=<intentionally leave this blank>
-SEB_DEFAULT_ALLOWED_DOMAIN=localhost:3000
+CANVAS_ACCESS_TOKEN=<leave blank for now — fill in after generating the admin access token>
+GATE_BASE_URL=http://localhost:3001/seb
+DATABASE_URL=<your Neon pooled connection string>
+DATABASE_URL_UNPOOLED=<your Neon unpooled connection string>
 ```
+
+Most of these are filled in during Part 3, once Canvas is running and you can create the keys and token. The reason there are three separate Canvas credentials is explained in Part 3: the **LTI key** authenticates instructor launches, the **OAuth API key** authenticates the per-student login flow, and the **admin access token** lets the backend act as the admin to upload files and set access codes. They are not interchangeable.
 
 ### 2.6 Start the Backend Server
 
@@ -340,10 +344,10 @@ Verify it's working: `http://localhost:3001/keys` should return a JSON object wi
 
 ### 2.7 Start the Frontend Server
 
-Open a **second terminal** in the project root and run:
+Open a **second terminal** and start the frontend from the `frontend` directory inside the repo:
 
 ```bash
-cd frontend    # or wherever the Next.js app lives within the repo
+cd frontend    # from the project root; this is where the Next.js app lives
 npm run dev
 ```
 
@@ -357,87 +361,145 @@ Verify it's working: `http://localhost:3002` should load the frontend UI.
 
 ## Part 3: Connect the LTI Tool to Canvas
 
-### 3.1 Create a Developer Key
+This part creates **three separate Canvas credentials**. They are easy to confuse, so here is what each one is and why it is needed before you create them:
+
+1. **LTI 1.3 key** (Section 3.1). Authenticates the instructor tool launch. This is what makes "Safe Exam Browser" appear in the course sidebar and lets Canvas hand the tool a signed launch token. Its identifier goes in `.env` as `LTI_CLIENT_ID`.
+
+2. **OAuth API key** (Section 3.3). A separate Developer Key of type API, used for the per-student login flow. When a student clicks the launch link, the tool sends them through a Canvas OAuth consent screen using this key, then carries the student's token so SEB can be redirected straight into the quiz. Its ID and secret go in `.env` as `CANVAS_OAUTH_CLIENT_ID` and `CANVAS_OAUTH_CLIENT_SECRET`.
+
+3. **Admin access token** (Section 3.5). A long-lived personal API token generated from the admin profile. The backend uses it to act as the admin for Canvas operations: setting and removing the quiz access code, setting the quiz access (unlock) and due dates, and updating the quiz title and instructions (to inject the per-student launch link). It goes in `.env` as `CANVAS_ACCESS_TOKEN`.
+
+The LTI key uses JWT-based authentication (JWK URL, OIDC initiation, public JWK). The OAuth API key uses a shared client ID and secret. They are different kinds of keys for different jobs, and you need both, plus the token.
+
+### 3.1 Create the LTI 1.3 Key
 
 1. Go to `http://localhost:3000`, log in as admin
-2. Click **Admin** in the left sidebar → select your account (e.g., "Site Admin")
+2. Click **Admin** in the left sidebar, select your account (for example "Site Admin")
 3. Click **Developer Keys** in the left sidebar
-4. Click **+ Developer Key** → **+ LTI Key**
-5. Set **Method** to **Manual Entry**
-6. Fill in the form:
-  - Key Name: Safe Exam Browser
-  - Owner Email: {Your Email}
-  - Redirect URIs: http://localhost:3001/lti/launch (or wherever the server for Gators-for-Honor is running from)
-  Configure Method: Paste JSON (then paste this below)
-  - {
-      "title": "Safe Exam Browser",
-      "description": "Create SEB-configured Canvas quizzes",
-      "target_link_uri": "http://localhost:3001/lti/launch",
-      "oidc_initiation_url": "http://localhost:3001/lti/login",
-      "oidc_initiation_urls": {},
-      "public_jwk_url": "http://host.docker.internal:3001/keys",
-      "public_jwk": null,
-      "scopes": [],
-      "extensions": [
-        {
-          "platform": "canvas.instructure.com",
-          "settings": {
-            "placements": [
-              {
-                "text": "Safe Exam Browser",
-                "placement": "course_navigation"
-              }
-            ]
-          }
-        }
-      ]
-    }
-> **Why `host.docker.internal` for the JWK URL?** Canvas runs inside Docker. When it needs to fetch your tool's public keys (server-to-server), `localhost` points to the container itself, not your host machine. `host.docker.internal` is Docker Desktop's way of reaching the host. This only applies to the JWK URL — all other URLs are browser-facing and use `localhost`, since the user's browser can reach both `localhost:3000` (Canvas) and `localhost:3001` (the tool) directly.
-10. Click **Save**
+4. Click **+ Developer Key**, then **+ LTI Key**
+5. Set **Key Name** to `Safe Exam Browser` and **Owner Email** to your email
+6. In **Redirect URIs**, enter (one per line):
+   ```
+   http://localhost:3001/lti/launch
+   http://localhost:3001/oauth/callback
+   ```
+7. Set **Configure** Method to **Paste JSON** and paste the configuration below.
 
-### 3.2 Enable the Key
+   > **Note on the JWK URL.** The JSON below uses `http://localhost:3001/keys`, which matches the LTI key shown in the second screenshot. If Canvas cannot fetch the tool's public keys during a launch (a 500 error referencing signing or `sign`), it is because Canvas runs inside Docker and `localhost` resolves to the container, not your host. In that case change `public_jwk_url` to `http://host.docker.internal:3001/keys`. The JWK URL is the only server-to-server URL; all other URLs are browser-facing and stay on `localhost` because the browser can reach both Canvas and the tool directly. See the troubleshooting note "Canvas can't fetch JWKS from tool" if the dry run fails.
 
-Back on the Developer Keys list, find your new key. Toggle the **State** switch to **ON**.
+   ```json
+   {
+     "title": "Safe Exam Browser",
+     "description": "Create SEB-configured Canvas quizzes",
+     "target_link_uri": "http://localhost:3001/lti/launch",
+     "oidc_initiation_url": "http://localhost:3001/lti/login",
+     "oidc_initiation_urls": {},
+     "public_jwk_url": "http://localhost:3001/keys",
+     "public_jwk": {},
+     "custom_fields": {},
+     "scopes": [],
+     "extensions": [
+       {
+         "domain": "",
+         "tool_id": "",
+         "privacy_level": "anonymous",
+         "platform": "canvas.instructure.com",
+         "settings": {
+           "platform": "canvas.instructure.com",
+           "placements": [
+             {
+               "text": "Safe Exam Browser",
+               "placement": "course_navigation",
+               "message_type": "LtiResourceLinkRequest"
+             }
+           ]
+         }
+       }
+     ]
+   }
+   ```
+8. Click **Save**.
 
-### 3.3 Copy the Client ID
+### 3.2 Enable the LTI Key and Copy Its Client ID
 
-The Client ID is the number shown in the Details column (e.g., `10000000000007`). Copy it.
+1. Back on the Developer Keys list, find the new key and toggle its **State** to **ON**.
+2. The Client ID is the number shown in the Details column (for example `10000000000007`). Copy it.
+3. Open `.env` and set:
+   ```
+   LTI_CLIENT_ID=10000000000007
+   ```
+   (Use the number you actually copied.)
 
-### 3.4 Create the Access Token
+### 3.3 Create the OAuth API Key
 
-This is for API calls
-1. Go to **Account** → **Settings**
-2. Scroll down and click **+ New Access Token**
-3. Put "Safe Exam Browser Dev" for the name and then press **Generate Token**
-4. Copy down the token **IMMEDIATELY**, you will not be able to see it again.
-5. Update your the **CANVAS_ACCESS_TOKEN** attribute of your **.env** file with this token
+This is a second, separate Developer Key. It powers the student login flow. Do not reuse the LTI key for this.
 
-### 3.5 Update .env
+1. Still in **Admin**, **Developer Keys**, click **+ Developer Key**, then **+ API Key** (not LTI Key).
+2. Fill in the form to match the first screenshot:
+   - **Key Name:** `Gators for Honor - OAuth Key`
+   - **Owner Email:** your email
+   - **Redirect URIs:** `http://localhost:3001/oauth/callback`
+   - **Redirect URI (Legacy):** leave blank
+   - **Vendor Code (LTI 2):** leave blank
+   - **Icon URL:** leave blank
+   - **Client Credentials Audience:** leave as **Canvas**
+   - **Enforce Scopes:** leave **OFF**. With scope enforcement off, the token can reach every endpoint available to the authorizing user, which is what this flow relies on. If you turn it on, the OAuth request will fail with `invalid_scope` unless you also add an explicit scope allow-list.
+3. Click **Save**.
 
-Open your `.env` file and set:
+### 3.4 Enable the OAuth Key and Copy Its ID and Secret
 
+1. Toggle the new key's **State** to **ON**.
+2. In the Details column, click **Show Key**. You will see two values:
+   - **ID** is the client ID.
+   - **Key** is the client secret. You can view it again later with Show Key, unlike the access token in 3.5.
+3. Open `.env` and set both:
+   ```
+   CANVAS_OAUTH_CLIENT_ID=<the ID>
+   CANVAS_OAUTH_CLIENT_SECRET=<the Key>
+   ```
+
+### 3.5 Generate the Admin Access Token (Required)
+
+The backend cannot set access codes or read quiz unlock dates without this token, so this step is required, not optional. It can be generated at any time after the admin account exists.
+
+1. Go to **Account**, **Settings** (this is the Approved Integrations area).
+2. Scroll to **Approved Integrations** and click **+ New Access Token**.
+3. Set the Purpose to something like `Safe Exam Browser Dev` and click **Generate Token**.
+4. Copy the token **immediately**. Canvas will not show it again.
+5. Open `.env` and set:
+   ```
+   CANVAS_ACCESS_TOKEN=<the token>
+   ```
+
+> If you ever lose this token, generate a new one and update `.env`. There is no way to recover the original value.
+
+### 3.6 Restart the Backend
+
+After filling in `LTI_CLIENT_ID`, `CANVAS_OAUTH_CLIENT_ID`, `CANVAS_OAUTH_CLIENT_SECRET`, and `CANVAS_ACCESS_TOKEN`, restart the backend so it loads the new values:
+
+```bash
+# Ctrl+C in the backend terminal, then:
+npm run dev
 ```
-LTI_CLIENT_ID=10000000000007
-```
 
-(Use whatever number you actually copied.)
+The frontend does not need a restart for these backend variables.
 
-Restart the backend (Ctrl+C in the backend terminal, then `npm run dev`). The frontend does not need to be restarted.
+### 3.7 Install the Tool in a Course
 
-### 3.6 Install in a Course
+This uses the LTI key's Client ID from Section 3.2.
 
-1. In Canvas, go to your admin account
-2. Go to the course → **Settings** → **Apps** tab
-3. Click **View App Configurations** → **+ App**
-4. Set Configuration Type to **By Client ID**
-5. Paste the Client ID → **Submit** → **Install**
-> This will add the LTI extension for all courses created under that account
+1. In Canvas, go to the course, then **Settings**, then the **Apps** tab
+2. Click **View App Configurations**, then **+ App**
+3. Set Configuration Type to **By Client ID**
+4. Paste the LTI Client ID, click **Submit**, then **Install**
 
-### 3.7 Test the Launch
+> Installing this at the account level adds the tool to all courses under that account.
+
+### 3.8 Test the Launch
 
 1. Navigate to your course
 2. Click **Safe Exam Browser** in the left sidebar
-3. You should see the "LTI Launch Successful" page showing your created quizzes
+3. You should see the "LTI Launch Successful" page showing your quizzes
 
 If it works, your environment is fully set up.
 
@@ -585,6 +647,13 @@ docker compose down
 
 ## Known Issues
 
-- `/health` endpoint is behind LTI authentication (should be public) — minor, non-blocking
-- `devMode` in app.js is set to `false` — set to `true` temporarily if you need debug logging for LTI issues
+- The `/health` endpoint is public and returns a small JSON status object — handy for confirming the backend is up at `http://localhost:3001/health`.
+- There is no `devMode` flag in `app.js`; the backend logs via plain `console.log`, visible in the terminal running `npm run dev`. Adjust logging in the source if you need more or less detail.
 - Canvas first boot on WSL 2 can take up to 5 minutes — subsequent boots are faster due to caching
+- On the first launch, each student sees a Canvas OAuth consent screen for the OAuth API key and must authorize the tool once. This is expected behavior of the student login flow.
+
+---
+
+## Next Steps
+
+This guide covers local development only. For how the tool is deployed and hosted in production (DigitalOcean droplet, Nginx, SSL, the Cloudflare Tunnel for Canvas, the domain, the deploy workflow, and the pressing maintenance issues), see `docs/MAINTENANCE.md`. For moving the tool onto UF's hosted Canvas, see `docs/UF_MIGRATION_GUIDE.md`.
