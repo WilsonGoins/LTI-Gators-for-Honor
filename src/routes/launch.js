@@ -340,6 +340,7 @@ router.get('/oauth/callback', async (req, res) => {
         client_secret: CLIENT_SECRET,
         redirect_uri: `${TOOL_URL}/oauth/callback`,
         code,
+        replace_tokens: '1',
       }),
     });
 
